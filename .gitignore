@@ -2,6 +2,9 @@
 *.bak
 WTF/
 
+# Release archives
+*.zip
+
 # macOS
 .DS_Store
 .DS_Store?

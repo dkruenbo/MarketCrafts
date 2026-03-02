@@ -15,6 +15,7 @@ local DB_DEFAULTS = {
             optedIn         = false,
             lastBroadcast   = 0,    -- time() of last manual broadcast
             refreshCooldown = 900,  -- 15 min in seconds
+            minimapAngle    = 225,  -- degrees; 225 = bottom-left of minimap ring
         },
     },
 }
@@ -37,6 +38,7 @@ function MC:OnEnable()
     MC.ChatFilter:Enable()
     MC.Listener:Enable()   -- registers CHAT_MSG_CHANNEL + CHAT_MSG_SYSTEM
     MC.Cache:Enable()      -- starts purge timer + GET_ITEM_INFO_RECEIVED
+    MC.MinimapButton:Create()
 end
 
 function MC:OnDisable()

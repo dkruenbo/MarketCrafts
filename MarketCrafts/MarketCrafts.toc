@@ -20,5 +20,6 @@ Broadcast.lua
 Listener.lua
 Cache.lua
 ChatFilter.lua
+MinimapButton.lua
 UI.lua
 MockData.lua

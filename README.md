@@ -14,7 +14,7 @@ Players opt in to advertise their crafting services. Other players open the Mark
 - **Opt-in only** — no data is broadcast unless you explicitly opt in with `/mc optin`
 - **Anti-abuse** — rate limiting (10 messages/min/sender), max 5 listings per player, 30-min TTL
 - **Blocklist** — `/mc ignore <Player>` to hide a player's listings permanently
-- **Automatic channel management** — joins the lowest available `GCMarket[N]` channel, re-validates every 10 minutes
+- **Automatic channel management** — joins the lowest available `MCMarket[N]` channel, re-validates every 10 minutes
 
 ---
 
@@ -68,7 +68,7 @@ To add a listing (until the recipe picker UI is complete):
 - **Platform**: WoW TBC Classic 2.5.5 (interface `20504`)
 - **Libraries**: AceAddon-3.0, AceEvent-3.0, AceTimer-3.0, AceDB-3.0 (character-scoped), AceConsole-3.0, AceGUI-3.0 — all bundled, no external dependencies
 - **Wire format**: `[MCR]L:<itemID>,<profession>,<itemName>` (list) and `[MCR]R:<itemID>` (remove)
-- **Channel pool**: `GCMarket`, `GCMarket1`–`GCMarket4`; converges to the lowest unlocked channel
+- **Channel pool**: `MCMarket`, `MCMarket1`–`MCMarket4`; converges to the lowest unlocked channel
 - **Cache TTL**: 30 minutes; keep-alive broadcast every 20 minutes
 - **Taint-safe**: zero use of protected API calls; safe for use during combat
 

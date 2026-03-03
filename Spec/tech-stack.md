@@ -35,7 +35,7 @@ Ace3 is the standard framework for structured WoW addon development. All modules
 | `CallbackHandler-1.0` | Inter-module callback dispatch — required by Ace3 |
 
 > **AceComm-3.0 is intentionally NOT used.**
-> AceComm wraps `C_ChatInfo.SendAddonMessage`, which only works on `GUILD`, `PARTY`, `RAID`, and `WHISPER` channels. Custom channels like `GCMarket` require `SendChatMessage` instead. AceComm is not applicable here.
+> AceComm wraps `C_ChatInfo.SendAddonMessage`, which only works on `GUILD`, `PARTY`, `RAID`, and `WHISPER` channels. Custom channels like `MCMarket` require `SendChatMessage` instead. AceComm is not applicable here.
 
 ### Required Transitive Dependencies
 
@@ -60,17 +60,17 @@ Ace3 is the standard framework for structured WoW addon development. All modules
 
 | Mechanism | Purpose |
 |---|---|
-| `SendChatMessage(msg, "CHANNEL", nil, channelIndex)` | Broadcast `[MCR]L:` and `[MCR]R:` listing messages to `GCMarket` |
+| `SendChatMessage(msg, "CHANNEL", nil, channelIndex)` | Broadcast `[MCR]L:` and `[MCR]R:` listing messages to `MCMarket` |
 | `ChatFrame_AddMessageEventFilter("CHAT_MSG_CHANNEL", fn)` | Suppress `[GC]` messages from all chat windows (taint-safe, local function only) |
 | `CHAT_MSG_CHANNEL` event | Receive and parse incoming listing messages |
 | `CHAT_MSG_CHANNEL_NOTICE` event | Handle channel join confirmations, leave events, and failure codes |
-| `JoinChannelByName("GCMarket[N]")` | Join primary channel or fallback |
-| `LeaveChannelByName("GCMarket[N]")` | Clean channel leave on disable or fallback rotation |
-| `ChatFrame_RemoveChannel(ChatFrame1, "GCMarket[N]")` | Hide channel from chat frames after successful join |
+| `JoinChannelByName("MCMarket[N]")` | Join primary channel or fallback |
+| `LeaveChannelByName("MCMarket[N]")` | Clean channel leave on disable or fallback rotation |
+| `ChatFrame_RemoveChannel(ChatFrame1, "MCMarket[N]")` | Hide channel from chat frames after successful join |
 | `GetNumCustomChannels()` | Pre-flight check — WoW TBC allows max 10 custom channels |
 
 > **NOT used:** `C_ChatInfo.SendAddonMessage` / AceComm-3.0.
-> `SendAddonMessage` does not support custom channels. Using it on `GCMarket` would silently fail or error.
+> `SendAddonMessage` does not support custom channels. Using it on `MCMarket` would silently fail or error.
 
 ---
 
@@ -189,7 +189,7 @@ UI.lua
 | `/run` macros in-game | Rapid functional testing of individual functions |
 | Two WoW accounts on the same realm | End-to-end test of broadcast → receive cycle |
 | Private TBC server (optional) | Isolated testing of channel edge cases and fallback logic |
-| Manual channel hijack test | Have a second account password-lock `GCMarket`, verify fallback to `GCMarket1` |
+| Manual channel hijack test | Have a second account password-lock `MCMarket`, verify fallback to `MCMarket1` |
 
 ---
 

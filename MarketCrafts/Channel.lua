@@ -1,5 +1,5 @@
 -- Channel.lua — M1: Channel State Machine
--- Manages joining/leaving the GCMarket[N] channel pool with automatic
+-- Manages joining/leaving the MCMarket[N] channel pool with automatic
 -- convergence to the lowest available channel.
 local AddonName, NS = ...
 local MC = NS.MC
@@ -7,16 +7,26 @@ local Channel = {}
 MC.Channel = Channel
 
 ---------------------------------------------------------------------------
--- Channel pool
+-- Channel pool (unbounded — walks MCMarket, MCMarket1, MCMarket2, … until one is open)
 ---------------------------------------------------------------------------
-local CHANNELS = { "GCMarket", "GCMarket1", "GCMarket2", "GCMarket3", "GCMarket4" }
+local function ChannelName(i)
+    if i == 1 then return "MCMarket" end
+    return "MCMarket" .. (i - 1)
+end
+
+-- Reverse: channel name → walk index (nil if not one of ours)
+local function ChannelToIndex(name)
+    if name == "MCMarket" then return 1 end
+    local n = name:match("^MCMarket(%d+)$")
+    return n and (tonumber(n) + 1) or nil
+end
 
 ---------------------------------------------------------------------------
 -- State
 ---------------------------------------------------------------------------
 local state           = "IDLE"   -- IDLE | JOINING | ACTIVE | REVALIDATING | UNAVAILABLE
-local activeIndex     = nil      -- 1-based index into CHANNELS (nil when not active)
-local walkIndex       = nil      -- current index being tried during a walk
+local activeIndex     = nil      -- walk index of the active channel (nil when not active)
+local walkIndex       = nil      -- walk index currently being tried
 local isIntentional   = false    -- flag: current YOU_LEFT was triggered by us
 local stepTimer       = nil      -- AceTimer handle for per-step 5s timeout
 local revalidateTimer = nil
@@ -57,18 +67,17 @@ end
 -- Walk logic
 ---------------------------------------------------------------------------
 
--- Attempt to join the channel at CHANNELS[index].
+-- Attempt to join ChannelName(index).
 -- Sets a 5-second per-step timeout in case CHAT_MSG_CHANNEL_NOTICE never fires.
+-- Circuit breaker at index > 50: if the chat server stops responding entirely,
+-- this prevents an infinite timer loop counting up to MCMarket<Infinity>.
 local function TryJoinAt(index)
-    if index > #CHANNELS then
-        -- Exhausted all fallbacks
+    if index > 50 then
         state = "UNAVAILABLE"
         walkIndex = nil
         MC.Broadcast:StopKeepAlive()
-        MC:Print("MarketCrafts: Market unavailable \xe2\x80\x94 all GCMarket channels are locked.")
-        retryTimer = MC:ScheduleTimer(function()
-            Channel:StartWalk()
-        end, 900) -- 15 min
+        MC:Print("MarketCrafts: Market unavailable \xe2\x80\x94 unable to connect to any chat channels.")
+        retryTimer = MC:ScheduleTimer(function() Channel:StartWalk() end, 900)
         return
     end
 
@@ -76,14 +85,14 @@ local function TryJoinAt(index)
     state = "JOINING"
     CancelStepTimer()
 
-    -- Verify channel slot availability
+    -- Verify channel slot availability (WoW TBC hard limit: 10 custom channels)
     if GetNumCustomChannels and GetNumCustomChannels() >= 10 then
         MC:Print("MarketCrafts: Cannot join market channel \xe2\x80\x94 you are at the 10 custom channel limit.")
         state = "UNAVAILABLE"
         return
     end
 
-    JoinChannelByName(CHANNELS[index])
+    JoinChannelByName(ChannelName(index))
 
     -- Per-step 5-second timeout: if CHAT_MSG_CHANNEL_NOTICE never fires, try next
     stepTimer = MC:ScheduleTimer(function()
@@ -96,22 +105,27 @@ end
 
 function Channel:StartWalk()
     if retryTimer then MC:CancelTimer(retryTimer); retryTimer = nil end
-    TryJoinAt(1)  -- Lua tables are 1-based; CHANNELS[1] = "GCMarket"
+    TryJoinAt(1)  -- index 1 = "MCMarket", index 2 = "MCMarket1", etc.
 end
 
 ---------------------------------------------------------------------------
 -- Event handler
 ---------------------------------------------------------------------------
-function Channel:OnChatMsgChannelNotice(msg, _, _, _, _, _, _, channelIndex, channelName)
+function Channel:OnChatMsgChannelNotice(msg, _, _, channelString, _, _, _, channelIndex, channelName)
     -- channelIndex (arg8) is the WoW channel number for SendChatMessage.
-    -- channelName (arg9) identifies which GCMarket[N] channel this notice is for.
+    -- channelName  (arg9) is the bare name (e.g. "MCMarket") — may be empty in some TBC builds.
+    -- channelString (arg4) is the formatted name with slot prefix (e.g. "7. MCMarket") — reliable fallback.
+
+    -- Debug: uncomment to diagnose argument layout on your build
+    -- print("MCR DEBUG:", msg, "| arg4:", channelString, "| arg8:", channelIndex, "| arg9:", channelName)
+
+    -- Normalise: if arg9 is empty, strip the "N. " prefix from arg4
+    if (not channelName or channelName == "") and channelString and channelString ~= "" then
+        channelName = channelString:match("^%d+%.%s*(.+)$") or channelString
+    end
 
     if msg == "YOU_JOINED" then
-        -- Find which of our channels this is
-        local matched = nil
-        for i, name in ipairs(CHANNELS) do
-            if channelName == name then matched = i; break end
-        end
+        local matched = ChannelToIndex(channelName)
         if not matched then return end  -- not one of ours
 
         if state == "JOINING" and walkIndex == matched then
@@ -171,7 +185,7 @@ function Channel:StartRevalidate()
     if state ~= "ACTIVE" then return end
     state = "REVALIDATING"
     isIntentional = true
-    local prevChannel = CHANNELS[activeIndex]
+    local prevChannel = ChannelName(activeIndex)
     activeIndex = nil
     if revalidateTimer then MC:CancelTimer(revalidateTimer); revalidateTimer = nil end
     Channel.wowChannelIndex = nil
@@ -201,7 +215,7 @@ function Channel:Disable()
     if activeIndex then
         isIntentional = true
         state = "IDLE"
-        SafeLeaveChannel(CHANNELS[activeIndex])
+        SafeLeaveChannel(ChannelName(activeIndex))
         activeIndex = nil
         Channel.wowChannelIndex = nil
     end
@@ -212,7 +226,7 @@ end
 -- Public API
 ---------------------------------------------------------------------------
 function Channel:GetActiveChannelName()
-    return activeIndex and CHANNELS[activeIndex] or nil
+    return activeIndex and ChannelName(activeIndex) or nil
 end
 
 function Channel:IsActive()

@@ -10,7 +10,7 @@ This directory is the WoW addon package. Copy it directly into `Interface/AddOns
 |---|---|
 | `MarketCrafts.toc` | Addon manifest — load order, interface version, SavedVariables |
 | `MarketCrafts.lua` | Core addon, lifecycle hooks, slash commands, M2 listing API |
-| `Channel.lua` | M1 channel state machine — joins/maintains `GCMarket[N]` pool |
+| `Channel.lua` | M1 channel state machine — joins/maintains `MCMarket[N]` pool |
 | `Broadcast.lua` | M3 outbound message queue with keep-alive and back-off |
 | `Listener.lua` | M3 inbound parser — feeds `[MCR]` messages into Cache |
 | `ChatFilter.lua` | M3 suppresses `[MCR]` messages from all chat frames |

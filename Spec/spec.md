@@ -39,7 +39,7 @@ WoW TBC Classic has no native server-wide crafting service discovery tool. Marke
 | File | Responsibility |
 |---|---|
 | `MarketCrafts.lua` | Addon init, SavedVariables bootstrap, slash command registration |
-| `Channel.lua` | Join/leave `GCMarket`, fallback chain, resilience event handling |
+| `Channel.lua` | Join/leave `MCMarket`, fallback chain, resilience event handling |
 | `Broadcast.lua` | Encode and send `[MCR]L:` / `[MCR]R:` messages, keep-alive timer |
 | `Listener.lua` | `CHAT_MSG_CHANNEL` handler — parse incoming messages, write to cache |
 | `Cache.lua` | In-memory listing store, 30-min TTL, rate limiting, validation |
@@ -72,27 +72,27 @@ MarketCraftsDB = {
 
 ### Channel
 
-- **Channel pool:** `GCMarket`, `GCMarket1`, `GCMarket2`, `GCMarket3`, `GCMarket4` (indices 0–4).
+- **Channel pool:** `MCMarket`, `MCMarket1`, `MCMarket2`, `MCMarket3`, `MCMarket4` (indices 0–4).
 - WoW TBC Classic allows a maximum of **10 custom channels**. Warn the player in chat if no slot is available. Do not block addon load.
 - After successfully joining: immediately call `ChatFrame_RemoveChannel` for **all chat frames** to prevent the "Joined Channel" notice and block accidental player input: `for i = 1, NUM_CHAT_WINDOWS do ChatFrame_RemoveChannel(_G["ChatFrame"..i], channelName) end`. Applying it only to `ChatFrame1` leaves the channel visible in split or addon-added frames (e.g. Prat).
 
 #### Initial Join — Walk Down From Index 0
 
-On login, attempt channels in order starting from `GCMarket` (index 0). Join the first one that succeeds (`YOU_JOINED`). This is the **active channel**. Store its index.
+On login, attempt channels in order starting from `MCMarket` (index 0). Join the first one that succeeds (`YOU_JOINED`). This is the **active channel**. Store its index.
 
 #### Channel Convergence — Periodic Re-Validate and Re-Join
 
 Two isolation problems must be handled:
 
-1. **Joined at a higher index:** A client that landed on `GCMarket2` because lower channels were locked stays there even after those channels are cleared, permanently separated from users in `GCMarket`.
-2. **Hijacked after join:** WoW does **not** kick existing members when a channel is password-locked. A user already sitting in `GCMarket` when it gets hijacked remains silently inside a channel that no new user can enter. They appear connected but are isolated from all future joiners.
+1. **Joined at a higher index:** A client that landed on `MCMarket2` because lower channels were locked stays there even after those channels are cleared, permanently separated from users in `MCMarket`.
+2. **Hijacked after join:** WoW does **not** kick existing members when a channel is password-locked. A user already sitting in `MCMarket` when it gets hijacked remains silently inside a channel that no new user can enter. They appear connected but are isolated from all future joiners.
 
 The only reliable way to detect case 2 is to **leave and attempt to rejoin**. A passive in-channel health check is not sufficient.
 
 **Solution:** Every **10 minutes**, every client — regardless of current active index — performs a full re-validate cycle:
 
 1. Leave the current channel (`LeaveChannelByName`). This is a player-initiated leave; set a flag so the `YOU_LEFT` handler does not trigger an accidental rejoin.
-2. Walk down from index 0: attempt `GCMarket`, then `GCMarket1`, … in order.
+2. Walk down from index 0: attempt `MCMarket`, then `MCMarket1`, … in order.
 3. **Per-step timeout:** After each `JoinChannelByName` call, wait up to **5 seconds** for `CHAT_MSG_CHANNEL_NOTICE`. If no notice arrives within that window (silent server error, packet loss), advance to the next fallback index. Without this, the walk stalls indefinitely if WoW never fires the notice.
 4. Join the first channel that returns `YOU_JOINED`. Update `activeIndex`. Remove the channel from all chat frames. Resume broadcasting on the new channel.
 5. **Re-broadcast only on channel change:** If `activeIndex` changed, immediately re-broadcast all listings so peers on the new channel have current data. If the client landed on the same index as before, do not re-broadcast — no disruption, no extra channel traffic.
@@ -240,7 +240,7 @@ ChatFrame_AddMessageEventFilter("CHAT_MSG_CHANNEL", MarketCraftsFilter)
 | `BANNED` | Banned from channel. Try next fallback. |
 | `YOU_LEFT` (unexpected, not player-initiated) | Re-join from index 0 (same as convergence cycle) — treat as an opportunity to re-validate. |
 | `YOU_LEFT` (player-initiated, convergence re-validate cycle) | Expected. Walk down from index 0 and join the first open channel. Do not short-circuit back to the previous index. |
-| All fallbacks exhausted (indices 0–4 all locked) | Disable all market features. Print to chat: `"MarketCrafts: Market unavailable — all GCMarket channels are locked."` Schedule a retry in 15 minutes. |
+| All fallbacks exhausted (indices 0–4 all locked) | Disable all market features. Print to chat: `"MarketCrafts: Market unavailable — all MCMarket channels are locked."` Schedule a retry in 15 minutes. |
 
 **Channel slot check:** Before joining, check `GetNumCustomChannels()`. If already at 10, print a warning and do not attempt to join. Do not block addon load.
 

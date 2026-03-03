@@ -154,7 +154,7 @@ Log in to the game. `/mc help` should print the command list. No Lua errors in B
 
 ## M1 — Channel State Machine
 
-**Goal:** The addon reliably joins and stays on the lowest available `GCMarket[N]` channel, handles hijacking, and re-validates every 10 minutes. This is the hardest piece of the addon.
+**Goal:** The addon reliably joins and stays on the lowest available `MCMarket[N]` channel, handles hijacking, and re-validates every 10 minutes. This is the hardest piece of the addon.
 
 ### State Machine
 
@@ -188,7 +188,7 @@ local Channel = {}
 MC.Channel = Channel
 
 -- Channel pool
-local CHANNELS = { "GCMarket", "GCMarket1", "GCMarket2", "GCMarket3", "GCMarket4" }
+local CHANNELS = { "MCMarket", "MCMarket1", "MCMarket2", "MCMarket3", "MCMarket4" }
 
 -- State
 local state          = "IDLE"   -- IDLE | JOINING | ACTIVE | REVALIDATING | UNAVAILABLE
@@ -221,7 +221,7 @@ local function TryJoinAt(index)
         state = "UNAVAILABLE"
         walkIndex = nil
         MC.Broadcast:StopKeepAlive()
-        MC:Print("MarketCrafts: Market unavailable — all GCMarket channels are locked.")
+        MC:Print("MarketCrafts: Market unavailable — all MCMarket channels are locked.")
         retryTimer = MC:ScheduleTimer(function()
             Channel:StartWalk()
         end, 900) -- 15 min
@@ -252,12 +252,12 @@ end
 
 function Channel:StartWalk()
     if retryTimer then MC:CancelTimer(retryTimer); retryTimer = nil end
-    TryJoinAt(1)  -- Lua tables are 1-based; CHANNELS[1] = "GCMarket"
+    TryJoinAt(1)  -- Lua tables are 1-based; CHANNELS[1] = "MCMarket"
 end
 
 function Channel:OnChatMsgChannelNotice(msg, _, _, _, _, _, _, _, channelName, _, channelIndex)
     -- channelIndex here is the WoW channel number, not our CHANNELS table index.
-    -- channelName identifies which GCMarket[N] channel this is for.
+    -- channelName identifies which MCMarket[N] channel this is for.
 
     if msg == "YOU_JOINED" then
         -- Find which of our channels this is
@@ -366,9 +366,9 @@ end
 
 ### M1 Verification
 
-- `/run LeaveChannelByName("GCMarket")` — addon should detect `YOU_LEFT`, revalidate, and rejoin.
-- On a second account: password-lock `GCMarket`. First account's next re-validate (or force with `/run MarketCrafts.Channel:StartRevalidate()`) should land on `GCMarket1`.
-- Remove the password. Wait or force a re-validate — first account should converge back down to `GCMarket`.
+- `/run LeaveChannelByName("MCMarket")` — addon should detect `YOU_LEFT`, revalidate, and rejoin.
+- On a second account: password-lock `MCMarket`. First account's next re-validate (or force with `/run MarketCrafts.Channel:StartRevalidate()`) should land on `MCMarket1`.
+- Remove the password. Wait or force a re-validate — first account should converge back down to `MCMarket`.
 - Fill all 10 custom channel slots on an alt, then log in main — should print the slot warning and not error.
 - Kill your internet for 6+ seconds during a join walk — per-step timeout should advance to the next fallback.
 - Check taint log — zero entries expected.
@@ -611,8 +611,8 @@ local function ParseRemove(msg, sender)
 end
 
 function MC.Listener:OnChatMsgChannel(event, msg, sender, _, _, _, _, _, _, channelName)
-    -- Ignore if this is not one of our GCMarket channels
-    if not channelName:find("^GCMarket") then return end
+    -- Ignore if this is not one of our MCMarket channels
+    if not channelName:find("^MCMarket") then return end
     if not msg or string.sub(msg, 1, 5) ~= "[MCR]" then return end
 
     -- Skip own messages
@@ -654,7 +654,7 @@ Both `MC.Listener:Enable()` and the `CHAT_MSG_SYSTEM` handler inside it are alre
 - Account B: `/run for k,v in pairs(MarketCrafts.Cache.listings) do print(k) end` — should show the listing.
 - In Account B's chat box, confirm no `[MCR]` text appeared (filter is working).
 - Force keep-alive on A: `/run MarketCrafts.Broadcast:SendAllListings()` — B's listing count should refresh.
-- Password-lock `GCMarket` on a third account. Wait for re-validate. Both A and B should converge to `GCMarket1` and messages should still flow.
+- Password-lock `MCMarket` on a third account. Wait for re-validate. Both A and B should converge to `MCMarket1` and messages should still flow.
 - Taint log: zero entries.
 
 ---
@@ -1236,6 +1236,6 @@ Use `if LeaveChannelByName then ... else ... end` for the guard.
 2. Account A: opted in, 5 listings from different professions.
 3. Account B: no listings, browsing.
 4. Account C: no MarketCrafts — confirm they see raw `[MCR]L:` messages in their channel list (visible by design) and can read them.
-5. Have account D (no addon) password-lock `GCMarket`. Wait for A and B to converge to `GCMarket1`. Password-lock `GCMarket1`. Both should fall to `GCMarket2`. Unlock `GCMarket`. A and B should converge back within 10 minutes.
+5. Have account D (no addon) password-lock `MCMarket`. Wait for A and B to converge to `MCMarket1`. Password-lock `MCMarket1`. Both should fall to `MCMarket2`. Unlock `MCMarket`. A and B should converge back within 10 minutes.
 6. Flood test: script account D to send `[MCR]L:` messages rapidly via chat macro. A and B should rate-limit and not display D's 11th+ listing.
 7. Check Blizzard spam filter: back-off triggers, queue clears, normal operation resumes.

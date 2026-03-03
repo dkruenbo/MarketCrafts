@@ -44,8 +44,8 @@ end
 -- Event handler
 ---------------------------------------------------------------------------
 function MC.Listener:OnChatMsgChannel(msg, sender, _, _, _, _, _, _, channelName)
-    -- Ignore if this is not one of our GCMarket channels
-    if not channelName:find("^GCMarket") then return end
+    -- Ignore if this is not one of our MCMarket channels
+    if not channelName:find("^MCMarket") then return end
     if not msg or string.sub(msg, 1, 5) ~= "[MCR]" then return end
 
     -- Skip own messages (handle both "Name" and "Name-Realm" formats)

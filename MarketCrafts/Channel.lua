@@ -1,5 +1,5 @@
 -- Channel.lua — M1: Channel State Machine
--- Manages joining/leaving the GCMarket[N] channel pool with automatic
+-- Manages joining/leaving the MCMarket[N] channel pool with automatic
 -- convergence to the lowest available channel.
 local AddonName, NS = ...
 local MC = NS.MC
@@ -9,7 +9,7 @@ MC.Channel = Channel
 ---------------------------------------------------------------------------
 -- Channel pool
 ---------------------------------------------------------------------------
-local CHANNELS = { "GCMarket", "GCMarket1", "GCMarket2", "GCMarket3", "GCMarket4" }
+local CHANNELS = { "MCMarket", "MCMarket1", "MCMarket2", "MCMarket3", "MCMarket4" }
 
 ---------------------------------------------------------------------------
 -- State
@@ -65,7 +65,7 @@ local function TryJoinAt(index)
         state = "UNAVAILABLE"
         walkIndex = nil
         MC.Broadcast:StopKeepAlive()
-        MC:Print("MarketCrafts: Market unavailable \xe2\x80\x94 all GCMarket channels are locked.")
+        MC:Print("MarketCrafts: Market unavailable \xe2\x80\x94 all MCMarket channels are locked.")
         retryTimer = MC:ScheduleTimer(function()
             Channel:StartWalk()
         end, 900) -- 15 min
@@ -96,7 +96,7 @@ end
 
 function Channel:StartWalk()
     if retryTimer then MC:CancelTimer(retryTimer); retryTimer = nil end
-    TryJoinAt(1)  -- Lua tables are 1-based; CHANNELS[1] = "GCMarket"
+    TryJoinAt(1)  -- Lua tables are 1-based; CHANNELS[1] = "MCMarket"
 end
 
 ---------------------------------------------------------------------------
@@ -104,8 +104,8 @@ end
 ---------------------------------------------------------------------------
 function Channel:OnChatMsgChannelNotice(msg, _, _, channelString, _, _, _, channelIndex, channelName)
     -- channelIndex (arg8) is the WoW channel number for SendChatMessage.
-    -- channelName  (arg9) is the bare name (e.g. "GCMarket") — may be empty in some TBC builds.
-    -- channelString (arg4) is the formatted name with slot prefix (e.g. "7. GCMarket") — reliable fallback.
+    -- channelName  (arg9) is the bare name (e.g. "MCMarket") — may be empty in some TBC builds.
+    -- channelString (arg4) is the formatted name with slot prefix (e.g. "7. MCMarket") — reliable fallback.
 
     -- Debug: uncomment to diagnose argument layout on your build
     -- print("MCR DEBUG:", msg, "| arg4:", channelString, "| arg8:", channelIndex, "| arg9:", channelName)

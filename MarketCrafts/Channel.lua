@@ -77,7 +77,7 @@ local function TryJoinAt(index)
         state = "UNAVAILABLE"
         walkIndex = nil
         MC.Broadcast:StopKeepAlive()
-        MC:Print("MarketCrafts: Market unavailable \xe2\x80\x94 unable to connect to any chat channels.")
+        MC:Print("MarketCrafts: Market unavailable — unable to connect to any chat channels.")
         retryTimer = MC:ScheduleTimer(function() Channel:StartWalk() end, 900)
         return
     end
@@ -94,7 +94,7 @@ local function TryJoinAt(index)
         if cName and cName ~= "" then customCount = customCount + 1 end
     end
     if customCount >= 10 then
-        MC:Print("MarketCrafts: Cannot join market channel \xe2\x80\x94 you are at the 10 custom channel limit.")
+        MC:Print("MarketCrafts: Cannot join market channel — you are at the 10 custom channel limit.")
         state = "UNAVAILABLE"
         return
     end
@@ -121,28 +121,31 @@ end
 -- Event handler
 ---------------------------------------------------------------------------
 function Channel:OnChatMsgChannelNotice(msg, _, _, channelString, _, _, _, channelIndex, channelName)
-    -- channelIndex (arg8) is the WoW channel number for SendChatMessage.
-    -- channelName  (arg9) is the bare name (e.g. "MCMarket") — may be empty in some TBC builds.
-    -- channelString (arg4) is the formatted name with slot prefix (e.g. "7. MCMarket") — reliable fallback.
-
-    -- Debug: logs argument layout to help diagnose TBC event payloads
-    if MC.debugMode then
-        print("MCR DEBUG:", msg, "| arg4:", channelString, "| arg8:", channelIndex, "| arg9:", channelName)
-    end
-
     -- Normalise: if arg9 is empty, strip the "N. " prefix from arg4
     if (not channelName or channelName == "") and channelString and channelString ~= "" then
         channelName = channelString:match("^%d+%.%s*(.+)$") or channelString
     end
 
+    -- Early exit: ignore events for non-MCMarket channels entirely
+    if not channelName or not ChannelToIndex(channelName) then return end
+
+    -- Debug: only logs MCMarket-related events
+    if MC.debugMode then
+        print("MCR DEBUG:", msg, "| ch:", channelName, "| idx:", channelIndex, "| state:", state, "| walk:", walkIndex, "| active:", activeIndex)
+    end
+
+    -- Ignore YOU_CHANGED: fires when channel slot numbers shift after
+    -- another channel is joined/left. Not actionable.
+    if msg == "YOU_CHANGED" then return end
+
     if msg == "YOU_JOINED" then
         local matched = ChannelToIndex(channelName)
-        if not matched then return end  -- not one of ours
 
         -- If we joined an MCMarket channel we weren't currently walking to,
-        -- leave it immediately to prevent channel accumulation (Bug 4).
+        -- leave it immediately to prevent channel accumulation.
         if state ~= "JOINING" or walkIndex ~= matched then
-            SafeLeaveChannel(ChannelName(matched))
+            isIntentional = true  -- prevent YOU_LEFT from triggering a re-walk
+            SafeLeaveChannel(channelName)
             return
         end
 
@@ -180,21 +183,28 @@ function Channel:OnChatMsgChannelNotice(msg, _, _, channelString, _, _, _, chann
         end
 
     elseif msg == "YOU_LEFT" then
+        -- Only react to YOU_LEFT for channels we care about.
+        -- If it's not our active channel and not intentional, ignore it.
+        local leftIndex = ChannelToIndex(channelName)
+
         if isIntentional then
-            -- Expected: we triggered this leave as part of re-validate or disable
+            -- Expected: we triggered this leave as part of re-validate, disable,
+            -- or cleaning up an unexpected join.
             isIntentional = false
             if state == "REVALIDATING" then
                 Channel:StartWalk()
             end
-            -- If IDLE (OnDisable), do nothing
-        else
-            -- Unexpected kick — treat as an opportunity to re-validate
+            -- If IDLE (OnDisable) or cleaning up stale join, do nothing
+        elseif leftIndex and leftIndex == activeIndex then
+            -- Unexpected kick from our active channel -- re-validate
             state = "REVALIDATING"
             activeIndex = nil
             Channel.wowChannelIndex = nil
             if revalidateTimer then MC:CancelTimer(revalidateTimer); revalidateTimer = nil end
             Channel:StartWalk()
         end
+        -- If leftIndex ~= activeIndex and not intentional, it's a stale channel
+        -- being cleaned up by the server or another addon. Ignore it.
     end
 end
 

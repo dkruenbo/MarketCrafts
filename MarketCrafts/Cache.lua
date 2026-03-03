@@ -38,8 +38,8 @@ function MC.Cache:AddOrUpdate(entry)
     local rt = rateTracker[sender]
     if rt then
         if now - rt.windowStart < 60 then
+            if rt.count >= RATE_LIMIT then return end  -- at or over limit
             rt.count = rt.count + 1
-            if rt.count > RATE_LIMIT then return end
         else
             rateTracker[sender] = { count = 1, windowStart = now }
         end
@@ -202,4 +202,15 @@ function MC.Cache:ClearSimulated()
     end
     MC.UI:Refresh()
     return cleared
+end
+
+--- Debug helper: return total number of cached listings
+function MC.Cache:GetCacheSize()
+    local count = 0
+    for _, sellerMap in pairs(listings) do
+        for _ in pairs(sellerMap) do
+            count = count + 1
+        end
+    end
+    return count
 end

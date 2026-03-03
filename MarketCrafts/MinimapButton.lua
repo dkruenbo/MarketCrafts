@@ -9,7 +9,7 @@ MC.MinimapButton = MinimapButton
 -- Constants
 ---------------------------------------------------------------------------
 local BUTTON_SIZE  = 31
-local ICON_TEXTURE = "Interface\\Icons\\INV_Misc_Coin_01"
+local ICON_TEXTURE = "Interface\\Icons\\Trade_Engineering"  -- Gear icon fits the crafting theme
 local RADIUS       = 80   -- pixels from minimap centre
 
 ---------------------------------------------------------------------------
@@ -19,6 +19,7 @@ local btn
 
 local function UpdatePosition(angle)
     local rad = math.rad(angle)
+    btn:ClearAllPoints()
     btn:SetPoint("CENTER", Minimap, "CENTER",
         math.cos(rad) * RADIUS,
         math.sin(rad) * RADIUS)
@@ -94,6 +95,9 @@ function MinimapButton:Create()
 
     -- Restore saved position (default: bottom-left of minimap)
     UpdatePosition(MC.db.char.settings.minimapAngle or 225)
+    
+    -- Show the button
+    btn:Show()
 end
 
 function MinimapButton:Show()

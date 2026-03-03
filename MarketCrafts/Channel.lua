@@ -31,6 +31,7 @@ local isIntentional   = false    -- flag: current YOU_LEFT was triggered by us
 local stepTimer       = nil      -- AceTimer handle for per-step 5s timeout
 local revalidateTimer = nil
 local retryTimer      = nil
+local MAX_WOW_CHANNELS = 20  -- GetChannelName range to scan for custom channels
 
 ---------------------------------------------------------------------------
 -- Helpers
@@ -85,8 +86,14 @@ local function TryJoinAt(index)
     state = "JOINING"
     CancelStepTimer()
 
-    -- Verify channel slot availability (WoW TBC hard limit: 10 custom channels)
-    if GetNumCustomChannels and GetNumCustomChannels() >= 10 then
+    -- Verify channel slot availability (WoW TBC hard limit: 10 custom channels).
+    -- GetNumCustomChannels does not exist in TBC Classic 2.5.x, so count manually.
+    local customCount = 0
+    for ci = 1, MAX_WOW_CHANNELS do
+        local cName = select(2, GetChannelName(ci))
+        if cName and cName ~= "" then customCount = customCount + 1 end
+    end
+    if customCount >= 10 then
         MC:Print("MarketCrafts: Cannot join market channel \xe2\x80\x94 you are at the 10 custom channel limit.")
         state = "UNAVAILABLE"
         return
@@ -98,6 +105,8 @@ local function TryJoinAt(index)
     stepTimer = MC:ScheduleTimer(function()
         stepTimer = nil
         if state == "JOINING" and walkIndex == index then
+            -- Leave the channel we just tried before moving on
+            SafeLeaveChannel(ChannelName(index))
             TryJoinAt(index + 1)
         end
     end, 5)
@@ -116,8 +125,10 @@ function Channel:OnChatMsgChannelNotice(msg, _, _, channelString, _, _, _, chann
     -- channelName  (arg9) is the bare name (e.g. "MCMarket") — may be empty in some TBC builds.
     -- channelString (arg4) is the formatted name with slot prefix (e.g. "7. MCMarket") — reliable fallback.
 
-    -- Debug: uncomment to diagnose argument layout on your build
-    -- print("MCR DEBUG:", msg, "| arg4:", channelString, "| arg8:", channelIndex, "| arg9:", channelName)
+    -- Debug: logs argument layout to help diagnose TBC event payloads
+    if MC.debugMode then
+        print("MCR DEBUG:", msg, "| arg4:", channelString, "| arg8:", channelIndex, "| arg9:", channelName)
+    end
 
     -- Normalise: if arg9 is empty, strip the "N. " prefix from arg4
     if (not channelName or channelName == "") and channelString and channelString ~= "" then
@@ -127,6 +138,13 @@ function Channel:OnChatMsgChannelNotice(msg, _, _, channelString, _, _, _, chann
     if msg == "YOU_JOINED" then
         local matched = ChannelToIndex(channelName)
         if not matched then return end  -- not one of ours
+
+        -- If we joined an MCMarket channel we weren't currently walking to,
+        -- leave it immediately to prevent channel accumulation (Bug 4).
+        if state ~= "JOINING" or walkIndex ~= matched then
+            SafeLeaveChannel(ChannelName(matched))
+            return
+        end
 
         if state == "JOINING" and walkIndex == matched then
             CancelStepTimer()
@@ -156,6 +174,8 @@ function Channel:OnChatMsgChannelNotice(msg, _, _, channelString, _, _, _, chann
     elseif msg == "WRONG_PASSWORD" or msg == "BANNED" then
         if state == "JOINING" then
             CancelStepTimer()
+            -- Leave the channel before trying the next one
+            SafeLeaveChannel(ChannelName(walkIndex))
             TryJoinAt(walkIndex + 1)
         end
 

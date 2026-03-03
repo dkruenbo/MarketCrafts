@@ -91,11 +91,14 @@ function MC.MockData:HandleSimCommand(arg)
         return
     end
 
+    MC:Debug("HandleSimCommand called with arg:", arg)
+
     if arg == "clear" then
         MC.MockData:SimClear()
     else
         local count = tonumber(arg)
         if count and count > 0 then
+            MC:Debug("Generating", count, "simulated sellers")
             MC.MockData:SimGenerate(count)
         else
             MC:Print("Usage: /mc sim <N> | /mc sim clear")
@@ -107,6 +110,7 @@ end
 --- Data flows through Cache:AddOrUpdate so all validation, rate-limiting,
 --- icon resolution, and UI refresh paths are tested end-to-end.
 function MC.MockData:SimGenerate(count)
+    MC:Debug("SimGenerate starting, count =", count)
     local injected = 0
     local totalListings = 0
 
@@ -116,6 +120,8 @@ function MC.MockData:SimGenerate(count)
         if i > #SELLER_NAMES then
             seller = seller .. tostring(math.ceil(i / #SELLER_NAMES))
         end
+
+        MC:Debug("Creating seller:", seller)
 
         -- Pick 1-5 random recipes for this seller
         local numListings = math.random(1, 5)
@@ -131,6 +137,8 @@ function MC.MockData:SimGenerate(count)
             if not used[idx] then
                 used[idx] = true
                 local recipe = SAMPLE_RECIPES[idx]
+
+                MC:Debug("  Adding listing:", recipe[2], "for", seller)
 
                 -- Feed through the normal cache path
                 MC.Cache:AddOrUpdate({
@@ -148,6 +156,7 @@ function MC.MockData:SimGenerate(count)
 
     MC:Printf("Simulated %d sellers with %d total listings.", injected, totalListings)
     MC:Debug("Mock data injected via Cache:AddOrUpdate — all validation ran.")
+    MC:Debug("Current cache size:", MC.Cache:GetCacheSize())
 end
 
 --- Remove all simulated entries from cache.

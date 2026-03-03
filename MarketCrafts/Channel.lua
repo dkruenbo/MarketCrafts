@@ -69,8 +69,18 @@ end
 
 -- Attempt to join ChannelName(index).
 -- Sets a 5-second per-step timeout in case CHAT_MSG_CHANNEL_NOTICE never fires.
--- There is no upper bound: the walk continues until an open channel is found.
+-- Circuit breaker at index > 50: if the chat server stops responding entirely,
+-- this prevents an infinite timer loop counting up to MCMarket<Infinity>.
 local function TryJoinAt(index)
+    if index > 50 then
+        state = "UNAVAILABLE"
+        walkIndex = nil
+        MC.Broadcast:StopKeepAlive()
+        MC:Print("MarketCrafts: Market unavailable \xe2\x80\x94 unable to connect to any chat channels.")
+        retryTimer = MC:ScheduleTimer(function() Channel:StartWalk() end, 900)
+        return
+    end
+
     walkIndex = index
     state = "JOINING"
     CancelStepTimer()

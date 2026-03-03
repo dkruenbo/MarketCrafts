@@ -9,6 +9,7 @@ MC.UI = {}
 -- State
 ---------------------------------------------------------------------------
 local mainFrame = nil
+local refreshTimer = nil  -- debounce timer for Refresh()
 
 ---------------------------------------------------------------------------
 -- Toggle / Open / Refresh
@@ -36,6 +37,8 @@ function MC.UI:Open()
     end
 
     mainFrame:SetCallback("OnClose", function(widget)
+        -- Clear cached scroll frame reference so it isn't reused after release (Bug 6)
+        MC.UI.browseScrollFrame = nil
         AceGUI:Release(widget)
         mainFrame = nil
     end)
@@ -45,9 +48,14 @@ function MC.UI:Open()
 end
 
 function MC.UI:Refresh()
-    if mainFrame then
-        MC.UI:Open()  -- rebuild with fresh data
-    end
+    if not mainFrame then return end
+    -- Debounce: coalesce rapid-fire refreshes (e.g. during sim injection)
+    -- into a single rebuild after 0.1s of quiet.
+    if refreshTimer then MC:CancelTimer(refreshTimer) end
+    refreshTimer = MC:ScheduleTimer(function()
+        refreshTimer = nil
+        if mainFrame then MC.UI:Open() end
+    end, 0.1)
 end
 
 ---------------------------------------------------------------------------

@@ -44,6 +44,10 @@ end
 -- Event handler
 ---------------------------------------------------------------------------
 function MC.Listener:OnChatMsgChannel(msg, sender, _, _, _, _, _, _, channelName)
+    -- Defensive: channelName may arrive as a number or nil in some TBC builds.
+    -- Coerce to string so :find() never errors.
+    channelName = tostring(channelName or "")
+
     -- Ignore if this is not one of our MCMarket channels
     if not channelName:find("^MCMarket") then return end
     if not msg or string.sub(msg, 1, 5) ~= "[MCR]" then return end

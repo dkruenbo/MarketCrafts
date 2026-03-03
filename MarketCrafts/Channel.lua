@@ -154,8 +154,13 @@ function Channel:OnChatMsgChannelNotice(msg, _, _, channelString, _, _, _, chann
             state = "ACTIVE"
             walkIndex = nil
 
-            -- Store the WoW channel number for SendChatMessage
-            Channel.wowChannelIndex = channelIndex
+            -- Look up the WoW slot number via GetChannelName rather than
+            -- trusting arg8, which may be 0 or unreliable on YOU_CHANGED.
+            local wowSlot = GetChannelName(channelName)
+            Channel.wowChannelIndex = (wowSlot and wowSlot > 0) and wowSlot or channelIndex
+            if MC.debugMode then
+                print("MCR: settled on", channelName, "wowSlot=", Channel.wowChannelIndex)
+            end
             HideChannelFromAllFrames(channelName)
             MC.Broadcast:StartKeepAlive()
 

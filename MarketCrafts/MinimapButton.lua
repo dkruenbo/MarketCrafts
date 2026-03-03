@@ -1,4 +1,5 @@
--- MinimapButton.lua — Draggable minimap button for MarketCrafts
+-- MinimapButton.lua -- Draggable minimap button for MarketCrafts
+-- Modelled after GuildCrafts' proven minimap button implementation.
 local AddonName, NS = ...
 local MC = NS.MC
 
@@ -8,9 +9,9 @@ MC.MinimapButton = MinimapButton
 ---------------------------------------------------------------------------
 -- Constants
 ---------------------------------------------------------------------------
+local ICON_TEXTURE = "Interface\\Icons\\Trade_Engineering"
 local BUTTON_SIZE  = 31
-local ICON_TEXTURE = "Interface\\Icons\\Trade_Engineering"  -- Gear icon fits the crafting theme
-local RADIUS       = 80   -- pixels from minimap centre
+local DRAG_RADIUS  = 80  -- distance from minimap centre
 
 ---------------------------------------------------------------------------
 -- Private
@@ -18,11 +19,19 @@ local RADIUS       = 80   -- pixels from minimap centre
 local btn
 
 local function UpdatePosition(angle)
-    local rad = math.rad(angle)
+    local x = math.cos(angle)
+    local y = math.sin(angle)
+
     btn:ClearAllPoints()
-    btn:SetPoint("CENTER", Minimap, "CENTER",
-        math.cos(rad) * RADIUS,
-        math.sin(rad) * RADIUS)
+    btn:SetPoint("CENTER", Minimap, "CENTER", x * DRAG_RADIUS, y * DRAG_RADIUS)
+end
+
+local function AngleFromCursor()
+    local mx, my = Minimap:GetCenter()
+    local cx, cy = GetCursorPosition()
+    local scale  = Minimap:GetEffectiveScale()
+    cx, cy = cx / scale, cy / scale
+    return math.atan2(cy - my, cx - mx)
 end
 
 ---------------------------------------------------------------------------
@@ -32,71 +41,70 @@ function MinimapButton:Create()
     if btn then return end
 
     btn = CreateFrame("Button", "MarketCraftsMinimapButton", Minimap)
-    btn:SetSize(BUTTON_SIZE, BUTTON_SIZE)
     btn:SetFrameStrata("MEDIUM")
     btn:SetFrameLevel(8)
-
-    -- Icon via SetNormalTexture so WoW applies its circular clip mask
-    btn:SetNormalTexture(ICON_TEXTURE)
-    btn:GetNormalTexture():SetTexCoord(0.07, 0.93, 0.07, 0.93)
-
-    -- Slightly darkened version when held down
-    btn:SetPushedTexture(ICON_TEXTURE)
-    btn:GetPushedTexture():SetTexCoord(0.07, 0.93, 0.07, 0.93)
-    btn:GetPushedTexture():SetVertexColor(0.7, 0.7, 0.7)
-
-    -- Circular border: standard TOPLEFT offset for a 31px button + 56px border texture
-    local border = btn:CreateTexture(nil, "OVERLAY")
-    border:SetTexture("Interface\\Minimap\\MiniMap-TrackingBorder")
-    border:SetSize(56, 56)
-    border:SetPoint("TOPLEFT", btn, "TOPLEFT", -12, 12)
-
-    -- Highlight on mouse-over
+    btn:SetSize(BUTTON_SIZE, BUTTON_SIZE)
+    btn:SetMovable(true)
+    btn:EnableMouse(true)
+    btn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+    btn:RegisterForDrag("LeftButton")
     btn:SetHighlightTexture("Interface\\Minimap\\UI-Minimap-ZoomButton-Highlight")
-    btn:GetHighlightTexture():SetBlendMode("ADD")
+
+    -- Border overlay (standard minimap button look)
+    local overlay = btn:CreateTexture(nil, "OVERLAY")
+    overlay:SetSize(53, 53)
+    overlay:SetTexture("Interface\\Minimap\\MiniMap-TrackingBorder")
+    overlay:SetPoint("TOPLEFT")
+
+    -- Icon as a separate BACKGROUND texture (same approach as GuildCrafts)
+    local icon = btn:CreateTexture(nil, "BACKGROUND")
+    icon:SetSize(20, 20)
+    icon:SetTexture(ICON_TEXTURE)
+    icon:SetPoint("CENTER", btn, "CENTER", 0, 1)
+    btn.icon = icon
 
     -- Tooltip
-    btn:SetScript("OnEnter", function(self)
-        GameTooltip:SetOwner(self, "ANCHOR_LEFT")
+    btn:SetScript("OnEnter", function(frame)
+        GameTooltip:SetOwner(frame, "ANCHOR_LEFT")
         GameTooltip:AddLine("MarketCrafts")
-        GameTooltip:AddLine("Click to toggle window", 1, 1, 1)
-        GameTooltip:AddLine("Drag to reposition", 0.7, 0.7, 0.7)
+        GameTooltip:AddLine("|cffffffffLeft-click|r to toggle window", 0.8, 0.8, 0.8)
+        GameTooltip:AddLine("|cffffffffDrag|r to reposition", 0.8, 0.8, 0.8)
         GameTooltip:Show()
     end)
     btn:SetScript("OnLeave", function()
         GameTooltip:Hide()
     end)
 
-    -- Left-click toggles the main window
-    btn:RegisterForClicks("LeftButtonUp")
-    btn:SetScript("OnClick", function(self, mouseBtn)
-        MC.UI:Toggle()
+    -- Click handler
+    btn:SetScript("OnClick", function(_, button)
+        if button == "LeftButton" then
+            MC.UI:Toggle()
+        end
     end)
 
     -- Drag to reposition around the minimap ring
-    btn:RegisterForDrag("LeftButton")
-    btn:SetMovable(true)
-
-    btn:SetScript("OnDragStart", function(self)
-        self:SetScript("OnUpdate", function(self)
-            local mx, my   = Minimap:GetCenter()
-            local px, py   = GetCursorPosition()
-            local scale    = UIParent:GetEffectiveScale()
-            px, py         = px / scale, py / scale
-            local angle    = math.deg(math.atan2(py - my, px - mx))
-            MC.db.char.settings.minimapAngle = angle
+    btn:SetScript("OnDragStart", function(frame)
+        frame.isDragging = true
+        frame:SetScript("OnUpdate", function()
+            local angle = AngleFromCursor()
             UpdatePosition(angle)
+            MC.db.char.settings.minimapAngle = angle
         end)
     end)
 
-    btn:SetScript("OnDragStop", function(self)
-        self:SetScript("OnUpdate", nil)
+    btn:SetScript("OnDragStop", function(frame)
+        frame.isDragging = false
+        frame:SetScript("OnUpdate", nil)
     end)
 
-    -- Restore saved position (default: bottom-left of minimap)
-    UpdatePosition(MC.db.char.settings.minimapAngle or 225)
-    
-    -- Show the button
+    -- Restore saved position (default: ~225 degrees = bottom-left)
+    local savedAngle = MC.db.char.settings.minimapAngle
+    if not savedAngle then
+        savedAngle = math.rad(225)
+        MC.db.char.settings.minimapAngle = savedAngle
+    end
+    UpdatePosition(savedAngle)
+
     btn:Show()
 end
 

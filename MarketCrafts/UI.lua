@@ -33,7 +33,7 @@ function MC.UI:Open()
     if MC.Channel:IsActive() then
         mainFrame:SetStatusText("Channel: " .. (MC.Channel:GetActiveChannelName() or "unknown"))
     else
-        mainFrame:SetStatusText("Market unavailable \xe2\x80\x94 channel not joined")
+        mainFrame:SetStatusText("Market unavailable — channel not joined")
     end
 
     mainFrame:SetCallback("OnClose", function(widget)
@@ -213,7 +213,7 @@ function MC.UI:RebuildBrowseRows(parent)
     if #listings == 0 then
         local empty = AceGUI:Create("Label")
         -- Friendly first-run message: distinguishes "empty market" from "addon broken".
-        empty:SetText("No listings found. Be the first to list \xe2\x80\x94 opt in and add a recipe under My Listings!")
+        empty:SetText("No listings found. Be the first to list — opt in and add a recipe under My Listings!")
         empty:SetFullWidth(true)
         scroll:AddChild(empty)
     else

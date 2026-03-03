@@ -79,15 +79,15 @@ function MC:HandleSlashCommand(input)
     elseif cmd == "sim" then
         MC.MockData:HandleSimCommand(arg)
     elseif cmd == "help" then
-        MC:Print("/mc \xe2\x80\x94 toggle window")
-        MC:Print("/mc optin \xe2\x80\x94 start broadcasting your listings")
-        MC:Print("/mc optout \xe2\x80\x94 stop broadcasting your listings")
-        MC:Print("/mc ignore <Player> \xe2\x80\x94 block player's listings")
-        MC:Print("/mc unignore <Player> \xe2\x80\x94 unblock player")
-        MC:Print("/mc list \xe2\x80\x94 show your active listings")
-        MC:Print("/mc debug \xe2\x80\x94 toggle debug mode")
-        MC:Print("/mc sim <N> \xe2\x80\x94 inject N fake sellers (debug mode)")
-        MC:Print("/mc sim clear \xe2\x80\x94 remove simulated data")
+        MC:Print("/mc — toggle window")
+        MC:Print("/mc optin — start broadcasting your listings")
+        MC:Print("/mc optout — stop broadcasting your listings")
+        MC:Print("/mc ignore <Player> — block player's listings")
+        MC:Print("/mc unignore <Player> — unblock player")
+        MC:Print("/mc list — show your active listings")
+        MC:Print("/mc debug — toggle debug mode")
+        MC:Print("/mc sim <N> — inject N fake sellers (debug mode)")
+        MC:Print("/mc sim clear — remove simulated data")
     else
         MC:Print("Unknown command. Type /mc help.")
     end
@@ -100,7 +100,7 @@ function MC:PrintMyListings()
         return
     end
     for i, l in ipairs(listings) do
-        self:Print(string.format("[%d] %s \xe2\x80\x94 %s", i, l.itemName, l.profName))
+        self:Print(string.format("[%d] %s — %s", i, l.itemName, l.profName))
     end
 end
 

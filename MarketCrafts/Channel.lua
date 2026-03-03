@@ -134,15 +134,13 @@ function Channel:OnChatMsgChannelNotice(msg, _, _, channelString, _, _, _, chann
         print("MCR DEBUG:", msg, "| ch:", channelName, "| idx:", channelIndex, "| state:", state, "| walk:", walkIndex, "| active:", activeIndex)
     end
 
-    -- Ignore YOU_CHANGED: fires when channel slot numbers shift after
-    -- another channel is joined/left. Not actionable.
-    if msg == "YOU_CHANGED" then return end
-
-    if msg == "YOU_JOINED" then
+    -- In TBC Classic, successfully joining a custom channel fires YOU_CHANGED
+    -- instead of YOU_JOINED (YOU_JOINED may never fire at all).
+    -- Treat both as a successful join when we are actively walking.
+    if msg == "YOU_JOINED" or msg == "YOU_CHANGED" then
         local matched = ChannelToIndex(channelName)
 
-        -- If we joined an MCMarket channel we weren't currently walking to,
-        -- leave it immediately to prevent channel accumulation.
+        -- If this is not the channel we're trying to join, leave it immediately.
         if state ~= "JOINING" or walkIndex ~= matched then
             isIntentional = true  -- prevent YOU_LEFT from triggering a re-walk
             SafeLeaveChannel(channelName)

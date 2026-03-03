@@ -28,6 +28,18 @@ function MC.UI:Open()
     mainFrame = AceGUI:Create("Frame")
     mainFrame:SetTitle("MarketCrafts")
     mainFrame:SetLayout("Flow")
+    mainFrame:SetWidth(660)
+    mainFrame:SetHeight(540)
+
+    -- Register with UISpecialFrames so the Escape key closes this window.
+    -- AceGUI Frame does not do this itself. Frame_OnClose fires on :Hide(), so
+    -- WoW's Escape handler will correctly trigger our OnClose callback.
+    _G["MarketCraftsMainFrame"] = mainFrame.frame
+    local _mcFound = false
+    for _, _n in ipairs(UISpecialFrames) do
+        if _n == "MarketCraftsMainFrame" then _mcFound = true; break end
+    end
+    if not _mcFound then tinsert(UISpecialFrames, "MarketCraftsMainFrame") end
 
     -- Channel status indicator (M6.4)
     if MC.Channel:IsActive() then
@@ -45,6 +57,17 @@ function MC.UI:Open()
 
     MC.UI:BuildMyListingsPanel(mainFrame)
     MC.UI:BuildBrowsePanel(mainFrame)
+end
+
+-- Update only the status bar text of an already-open window.
+-- Called by Channel after settling so the user doesn't have to reopen the UI.
+function MC.UI:UpdateStatus()
+    if not mainFrame then return end
+    if MC.Channel:IsActive() then
+        mainFrame:SetStatusText("Channel: " .. (MC.Channel:GetActiveChannelName() or "unknown"))
+    else
+        mainFrame:SetStatusText("Market unavailable — channel not joined")
+    end
 end
 
 function MC.UI:Refresh()
@@ -103,12 +126,14 @@ function MC.UI:BuildMyListingsPanel(parent)
 
     if #listings < 5 then
         local addBtn = AceGUI:Create("Button")
-        addBtn:SetText("Add Listing")
+        addBtn:SetText("Add from Profession")
         addBtn:SetCallback("OnClick", function()
-            -- Recipe picker: M6.5 future widget
-            -- Do NOT use CastSpellByName — protected in TBC, causes taint.
-            MC:Print("Please open your profession window, then use:")
-            MC:Print("/run MarketCrafts:AddMyListing(itemID, \"Profession\", \"Item Name\")")
+            local n = GetNumTradeSkills and GetNumTradeSkills() or 0
+            if n == 0 then
+                MC:Print("Open a Profession window first, then click 'Add from Profession' again.")
+                return
+            end
+            MC.UI:OpenProfessionPicker()
         end)
         btnRow:AddChild(addBtn)
     end
@@ -135,6 +160,14 @@ function MC.UI:BuildMyListingsPanel(parent)
     end
     btnRow:AddChild(refreshBtn)
     group:AddChild(btnRow)
+
+    -- Hint: tell the user they need an open profession window first.
+    if #listings < 5 then
+        local hint = AceGUI:Create("Label")
+        hint:SetText("|cffaaaaaa Tip: open a Profession window from your spellbook, then click 'Add from Profession'.|r")
+        hint:SetFullWidth(true)
+        group:AddChild(hint)
+    end
 end
 
 ---------------------------------------------------------------------------
@@ -267,4 +300,152 @@ function MC.UI:RebuildBrowseRows(parent)
     scroll:AddChild(status)
 
     MC.UI.browseScrollFrame = scroll
+end
+
+---------------------------------------------------------------------------
+-- Profession Picker popup
+-- Opens when user has a tradeskill window open; lets them click-to-add
+-- recipes without typing any commands.
+---------------------------------------------------------------------------
+function MC.UI:OpenProfessionPicker()
+    local numSkills = GetNumTradeSkills and GetNumTradeSkills() or 0
+    if numSkills == 0 then
+        MC:Print("Open a Profession window first.")
+        return
+    end
+
+    -- GetTradeSkillLine() can return the WoW global UNKNOWN constant when the
+    -- skill line isn't identified. Normalize it away and fall back gracefully.
+    local tradeName = GetTradeSkillLine()
+    if not tradeName or tradeName == "" or tradeName == UNKNOWN then tradeName = nil end
+    -- Secondary fallback: the first "header" entry in the tradeskill list is
+    -- always the profession name (e.g. "Tailoring") — same technique as GuildCrafts.
+    if not tradeName then
+        for i = 1, numSkills do
+            local skillName, skillType = GetTradeSkillInfo(i)
+            if skillType == "header" and skillName and skillName ~= "" and skillName ~= UNKNOWN then
+                tradeName = skillName
+                break
+            end
+        end
+    end
+    tradeName = tradeName or "Profession"
+
+    -- Release any previous picker window
+    if MC.UI.pickerFrame then
+        MC.UI.pickerFrame:Release()
+        MC.UI.pickerFrame = nil
+    end
+
+    local picker = AceGUI:Create("Frame")
+    picker:SetTitle("Add Recipe — " .. tradeName)
+    picker:SetLayout("List")
+    picker:SetWidth(430)
+    picker:SetHeight(490)
+    MC.UI.pickerFrame = picker
+
+    -- Escape key support for picker
+    _G["MarketCraftsPickerFrame"] = picker.frame
+    local _pFound = false
+    for _, _n in ipairs(UISpecialFrames) do
+        if _n == "MarketCraftsPickerFrame" then _pFound = true; break end
+    end
+    if not _pFound then tinsert(UISpecialFrames, "MarketCraftsPickerFrame") end
+
+    picker:SetCallback("OnClose", function(widget)
+        AceGUI:Release(widget)
+        MC.UI.pickerFrame = nil
+    end)
+
+    -- Search box
+    local searchBox = AceGUI:Create("EditBox")
+    searchBox:SetLabel("Search recipes:")
+    searchBox:SetFullWidth(true)
+    picker:AddChild(searchBox)
+
+    -- Scrollable recipe list (350px leaves room for search box + frame chrome)
+    local scroll = AceGUI:Create("ScrollFrame")
+    scroll:SetLayout("List")
+    scroll:SetFullWidth(true)
+    scroll:SetHeight(350)
+    picker:AddChild(scroll)
+
+    -- Build a set of already-listed itemIDs for quick lookup
+    local listed = {}
+    for _, entry in ipairs(MC.db.char.myListings) do
+        listed[entry.itemID] = true
+    end
+
+    -- Collect non-header recipes from the open tradeskill window
+    local recipes = {}
+    for i = 1, numSkills do
+        local name, skillType = GetTradeSkillInfo(i)
+        if skillType ~= "header" and name then
+            local link = GetTradeSkillItemLink(i)
+            local itemID = link and tonumber(link:match("item:(%d+)"))
+            if itemID then
+                table.insert(recipes, { itemID = itemID, name = name })
+            end
+        end
+    end
+
+    local tname = tradeName
+    local filterText = ""
+
+    local function RebuildRecipeRows()
+        scroll:ReleaseChildren()
+        local filter = filterText:lower()
+        local shown = 0
+
+        for _, recipe in ipairs(recipes) do
+            if filter == "" or recipe.name:lower():find(filter, 1, true) then
+                shown = shown + 1
+                local row = AceGUI:Create("SimpleGroup")
+                row:SetFullWidth(true)
+                row:SetLayout("Flow")
+
+                local nameLbl = AceGUI:Create("Label")
+                nameLbl:SetText(recipe.name)
+                nameLbl:SetRelativeWidth(0.76)
+                row:AddChild(nameLbl)
+
+                local btn = AceGUI:Create("Button")
+                btn:SetRelativeWidth(0.24)
+                if listed[recipe.itemID] or #MC.db.char.myListings >= 5 then
+                    btn:SetText(listed[recipe.itemID] and "Listed" or "Full")
+                    btn:SetDisabled(true)
+                else
+                    btn:SetText("Add")
+                    local id, rname = recipe.itemID, recipe.name
+                    btn:SetCallback("OnClick", function()
+                        local ok = MC:AddMyListing(id, tname, rname)
+                        if ok then
+                            btn:SetText("Listed")
+                            btn:SetDisabled(true)
+                            listed[id] = true
+                            MC.UI:Refresh()
+                        end
+                    end)
+                end
+                row:AddChild(btn)
+                scroll:AddChild(row)
+            end
+        end
+
+        if shown == 0 then
+            local lbl = AceGUI:Create("Label")
+            lbl:SetText(filter ~= ""
+                and "No recipes match your search."
+                or "No learnable recipes found. Make sure a Profession window is open.")
+            lbl:SetFullWidth(true)
+            scroll:AddChild(lbl)
+        end
+    end
+
+    searchBox:SetCallback("OnTextChanged", function(widget)
+        filterText = widget:GetText() or ""
+        RebuildRecipeRows()
+    end)
+
+    RebuildRecipeRows()
 end

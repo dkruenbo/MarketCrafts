@@ -24,12 +24,11 @@ end
 ---------------------------------------------------------------------------
 -- State
 ---------------------------------------------------------------------------
-local state           = "IDLE"   -- IDLE | JOINING | ACTIVE | REVALIDATING | UNAVAILABLE
+local state           = "IDLE"   -- IDLE | JOINING | ACTIVE | UNAVAILABLE
 local activeIndex     = nil      -- walk index of the active channel (nil when not active)
 local walkIndex       = nil      -- walk index currently being tried
 local isIntentional   = false    -- flag: current YOU_LEFT was triggered by us
 local stepTimer       = nil      -- AceTimer handle for per-step 5s timeout
-local revalidateTimer = nil
 local retryTimer      = nil
 local MAX_WOW_CHANNELS = 20  -- GetChannelName range to scan for custom channels
 
@@ -131,7 +130,7 @@ function Channel:OnChatMsgChannelNotice(msg, _, _, channelString, _, _, _, chann
 
     -- Debug: only logs MCMarket-related events
     if MC.debugMode then
-        print("MCR DEBUG:", msg, "| ch:", channelName, "| idx:", channelIndex, "| state:", state, "| walk:", walkIndex, "| active:", activeIndex)
+        print("MCR DEBUG:", msg, "| ch:", channelName, "| idx:", channelIndex, "| state:", state, "| walk:", walkIndex, "| active:", activeIndex, "| intentional:", tostring(isIntentional))
     end
 
     -- In TBC Classic, successfully joining a custom channel fires YOU_CHANGED
@@ -163,17 +162,11 @@ function Channel:OnChatMsgChannelNotice(msg, _, _, channelString, _, _, _, chann
             end
             HideChannelFromAllFrames(channelName)
             MC.Broadcast:StartKeepAlive()
+            MC.UI:UpdateStatus()
 
             -- Re-broadcast only if we moved to a different channel
             if prevIndex ~= activeIndex then
                 MC.Broadcast:SendAllListings()
-            end
-
-            -- Start re-validate cycle
-            if not revalidateTimer then
-                revalidateTimer = MC:ScheduleRepeatingTimer(function()
-                    Channel:StartRevalidate()
-                end, 600) -- 10 min
             end
         end
 
@@ -191,39 +184,30 @@ function Channel:OnChatMsgChannelNotice(msg, _, _, channelString, _, _, _, chann
         local leftIndex = ChannelToIndex(channelName)
 
         if isIntentional then
-            -- Expected: we triggered this leave as part of re-validate, disable,
-            -- or cleaning up an unexpected join.
+            -- Expected: we triggered this leave as part of disable or cleaning
+            -- up an unexpected join. Just clear the flag.
             isIntentional = false
-            if state == "REVALIDATING" then
+        elseif leftIndex and leftIndex == activeIndex then
+            -- Looks like an unexpected kick from our active channel.
+            -- Verify with the API before acting -- TBC can fire spurious YOU_LEFT.
+            local stillIn = GetChannelName(channelName)
+            if stillIn and stillIn > 0 then
+                -- Still in the channel; event was spurious. Do nothing.
+                if MC.debugMode then
+                    print("MCR: spurious YOU_LEFT ignored, still in slot", stillIn)
+                end
+            else
+                -- Genuinely removed -- restart the walk.
+                activeIndex = nil
+                Channel.wowChannelIndex = nil
+                state = "JOINING"
+                MC.UI:UpdateStatus()
                 Channel:StartWalk()
             end
-            -- If IDLE (OnDisable) or cleaning up stale join, do nothing
-        elseif leftIndex and leftIndex == activeIndex then
-            -- Unexpected kick from our active channel -- re-validate
-            state = "REVALIDATING"
-            activeIndex = nil
-            Channel.wowChannelIndex = nil
-            if revalidateTimer then MC:CancelTimer(revalidateTimer); revalidateTimer = nil end
-            Channel:StartWalk()
         end
         -- If leftIndex ~= activeIndex and not intentional, it's a stale channel
         -- being cleaned up by the server or another addon. Ignore it.
     end
-end
-
----------------------------------------------------------------------------
--- Re-validate
----------------------------------------------------------------------------
-function Channel:StartRevalidate()
-    if state ~= "ACTIVE" then return end
-    state = "REVALIDATING"
-    isIntentional = true
-    local prevChannel = ChannelName(activeIndex)
-    activeIndex = nil
-    if revalidateTimer then MC:CancelTimer(revalidateTimer); revalidateTimer = nil end
-    Channel.wowChannelIndex = nil
-    SafeLeaveChannel(prevChannel)
-    -- YOU_LEFT event will fire and trigger StartWalk() via OnChatMsgChannelNotice
 end
 
 ---------------------------------------------------------------------------
@@ -241,7 +225,6 @@ function Channel:Enable()
 end
 
 function Channel:Disable()
-    if revalidateTimer then MC:CancelTimer(revalidateTimer); revalidateTimer = nil end
     if retryTimer then MC:CancelTimer(retryTimer); retryTimer = nil end
     CancelStepTimer()
     MC.Broadcast:StopKeepAlive()

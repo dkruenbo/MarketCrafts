@@ -35,23 +35,24 @@ function MinimapButton:Create()
     btn:SetFrameStrata("MEDIUM")
     btn:SetFrameLevel(8)
 
-    -- Icon
-    local icon = btn:CreateTexture(nil, "BACKGROUND")
-    icon:SetTexture(ICON_TEXTURE)
-    icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)   -- trim outer pixel border
-    icon:SetAllPoints()
+    -- Icon via SetNormalTexture so WoW applies its circular clip mask
+    btn:SetNormalTexture(ICON_TEXTURE)
+    btn:GetNormalTexture():SetTexCoord(0.07, 0.93, 0.07, 0.93)
 
-    -- Circular border (re-uses the standard minimap tracking border)
+    -- Slightly darkened version when held down
+    btn:SetPushedTexture(ICON_TEXTURE)
+    btn:GetPushedTexture():SetTexCoord(0.07, 0.93, 0.07, 0.93)
+    btn:GetPushedTexture():SetVertexColor(0.7, 0.7, 0.7)
+
+    -- Circular border: standard TOPLEFT offset for a 31px button + 56px border texture
     local border = btn:CreateTexture(nil, "OVERLAY")
     border:SetTexture("Interface\\Minimap\\MiniMap-TrackingBorder")
     border:SetSize(56, 56)
-    border:SetPoint("CENTER", btn, "CENTER", 0, 0)
+    border:SetPoint("TOPLEFT", btn, "TOPLEFT", -12, 12)
 
     -- Highlight on mouse-over
-    local hl = btn:CreateTexture(nil, "HIGHLIGHT")
-    hl:SetTexture("Interface\\Minimap\\UI-Minimap-ZoomButton-Highlight")
-    hl:SetBlendMode("ADD")
-    hl:SetAllPoints()
+    btn:SetHighlightTexture("Interface\\Minimap\\UI-Minimap-ZoomButton-Highlight")
+    btn:GetHighlightTexture():SetBlendMode("ADD")
 
     -- Tooltip
     btn:SetScript("OnEnter", function(self)

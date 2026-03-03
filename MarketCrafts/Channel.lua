@@ -102,9 +102,18 @@ end
 ---------------------------------------------------------------------------
 -- Event handler
 ---------------------------------------------------------------------------
-function Channel:OnChatMsgChannelNotice(msg, _, _, _, _, _, _, channelIndex, channelName)
+function Channel:OnChatMsgChannelNotice(msg, _, _, channelString, _, _, _, channelIndex, channelName)
     -- channelIndex (arg8) is the WoW channel number for SendChatMessage.
-    -- channelName (arg9) identifies which GCMarket[N] channel this notice is for.
+    -- channelName  (arg9) is the bare name (e.g. "GCMarket") — may be empty in some TBC builds.
+    -- channelString (arg4) is the formatted name with slot prefix (e.g. "7. GCMarket") — reliable fallback.
+
+    -- Debug: uncomment to diagnose argument layout on your build
+    -- print("MCR DEBUG:", msg, "| arg4:", channelString, "| arg8:", channelIndex, "| arg9:", channelName)
+
+    -- Normalise: if arg9 is empty, strip the "N. " prefix from arg4
+    if (not channelName or channelName == "") and channelString and channelString ~= "" then
+        channelName = channelString:match("^%d+%.%s*(.+)$") or channelString
+    end
 
     if msg == "YOU_JOINED" then
         -- Find which of our channels this is

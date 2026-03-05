@@ -56,7 +56,17 @@ Spec/                  ← Design documents
 | `/mc sim clear` | Remove all simulated listings |
 | `/mc help` | Print all commands |
 
-To add a listing (until the recipe picker UI is complete):
+## Adding a Listing
+
+Use the **"Add from Profession"** button in the My Listings panel:
+
+1. Open a profession window from your spellbook (or via `/cast Alchemy`).
+2. Open the Market window with `/mc`.
+3. Click **Add from Profession** and select a recipe.
+
+### Advanced: scripted use
+
+You can also add a listing via the console (useful for testing):
 ```
 /run MarketCrafts:AddMyListing(22861, "Alchemy", "Flask of Supreme Power")
 ```

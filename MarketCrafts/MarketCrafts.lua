@@ -11,11 +11,13 @@ local DB_DEFAULTS = {
     char = {
         myListings  = {},   -- up to 5 entries: { itemID, profName, itemName }
         blocklist   = {},   -- { ["PlayerName"] = true }
+        favorites   = {},   -- { ["PlayerName"] = true }
         settings    = {
-            optedIn         = false,
-            lastBroadcast   = 0,    -- time() of last manual broadcast
-            refreshCooldown = 900,  -- 15 min in seconds
-            minimapAngle    = 225,  -- degrees; 225 = bottom-left of minimap ring
+            optedIn           = false,
+            lastBroadcast     = 0,    -- time() of last manual broadcast
+            refreshCooldown   = 900,  -- 15 min in seconds
+            minimapAngle      = 225,  -- degrees; 225 = bottom-left of minimap ring
+            whisperTemplate   = "Hi {seller}, I'd like {item} crafted!",
         },
     },
 }
@@ -85,6 +87,21 @@ function MC:HandleSlashCommand(input)
         if MC.debugMode then
             MC:Print("Cache size: " .. MC.Cache:GetCacheSize() .. " listing(s)")
         end
+    elseif cmd == "template" then
+        if arg ~= "" then
+            MC.db.char.settings.whisperTemplate = arg:sub(1, 200)
+            MC:Print("Whisper template set: " .. MC.db.char.settings.whisperTemplate)
+        else
+            MC:Print("Template: " .. (MC.db.char.settings.whisperTemplate or "(none)"))
+            MC:Print("Tokens: {seller}, {item}, {prof}")
+        end
+    elseif cmd == "favorites" then
+        local count = 0
+        for name in pairs(MC.db.char.favorites) do
+            MC:Print("★ " .. name)
+            count = count + 1
+        end
+        if count == 0 then MC:Print("No favourite sellers.") end
     elseif cmd == "sim" then
         MC.MockData:HandleSimCommand(arg)
     elseif cmd == "help" then
@@ -97,6 +114,9 @@ function MC:HandleSlashCommand(input)
         MC:Print("/mc debug — toggle debug mode")
         MC:Print("/mc sim <N> — inject N fake sellers (debug mode)")
         MC:Print("/mc sim clear — remove simulated data")
+        MC:Print("/mc template [text] — view/set whisper template ({seller},{item},{prof})")
+        MC:Print("/mc favorites — list starred sellers")
+        MC:Print("/mc unignore <Player> — unblock (or right-click seller in Browse)")
     else
         MC:Print("Unknown command. Type /mc help.")
     end

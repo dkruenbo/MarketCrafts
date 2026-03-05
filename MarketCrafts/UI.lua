@@ -9,8 +9,9 @@ MC.UI = {}
 -- State
 ---------------------------------------------------------------------------
 local mainFrame = nil
-local refreshTimer = nil  -- debounce timer for Refresh()
-local FillMyListings      -- forward declaration; assigned before BuildMyListingsPanel
+local refreshTimer = nil   -- debounce timer for Refresh()
+local FillMyListings       -- forward declaration; assigned before BuildMyListingsPanel
+local MCBlocklistMenuFrame -- F11: context menu frame (created once, reused)
 
 ---------------------------------------------------------------------------
 -- Toggle / Open / Refresh
@@ -50,8 +51,11 @@ function MC.UI:Open()
     end
 
     mainFrame:SetCallback("OnClose", function(widget)
-        -- Clear cached scroll frame reference so it isn't reused after release (Bug 6)
+        -- Clear all cached widget references so stale refs don't survive a re-open
         MC.UI.browseScrollFrame = nil
+        MC.UI.browseGroup       = nil
+        MC.UI.myListingsGroup   = nil
+        MC.UI.profChipsRow      = nil
         AceGUI:Release(widget)
         mainFrame = nil
     end)
@@ -68,6 +72,18 @@ function MC.UI:UpdateStatus()
         mainFrame:SetStatusText("Channel: " .. (MC.Channel:GetActiveChannelName() or "unknown"))
     else
         mainFrame:SetStatusText("Market unavailable — channel not joined")
+    end
+end
+
+-- F9: freshness label text + r,g,b colour for Browse rows
+function MC.UI:FormatAge(receivedAt)
+    local age = time() - receivedAt
+    if age < 300 then
+        return " (just now)", 0.3, 1.0, 0.3
+    elseif age < 900 then
+        return string.format(" (%dm ago)", math.floor(age / 60)), 1.0, 1.0, 0.3
+    else
+        return string.format(" (%dm ago)", math.floor(age / 60)), 0.6, 0.6, 0.6
     end
 end
 
@@ -251,12 +267,70 @@ function MC.UI:BuildBrowsePanel(parent)
     controlRow:AddChild(sortDropdown)
     group:AddChild(controlRow)
 
+    -- Profession filter chips (F2) — persistent container, children rebuilt in RebuildBrowseRows
+    local profChipsRow = AceGUI:Create("SimpleGroup")
+    profChipsRow:SetFullWidth(true)
+    profChipsRow:SetLayout("Flow")
+    MC.UI.profChipsRow = profChipsRow
+    group:AddChild(profChipsRow)
+
     MC.UI.browseGroup = group
     MC.UI.searchFilter = ""
+    MC.UI.profFilter   = nil
     MC.UI:RebuildBrowseRows(group)
 end
 
+-- F11: right-click context menu to hide a sender from Browse
+local function ShowBlocklistMenu(seller)
+    if not MCBlocklistMenuFrame then
+        MCBlocklistMenuFrame = CreateFrame("Frame", "MCBlocklistMenuFrame", UIParent, "UIDropDownMenuTemplate")
+    end
+    local menu = {
+        { text = seller, isTitle = true, notCheckable = true },
+        { text = "Hide this seller", notCheckable = true, func = function()
+            MC.Cache:Ignore(seller)
+        end },
+        { text = "Cancel", notCheckable = true, func = function() end },
+    }
+    EasyMenu(menu, MCBlocklistMenuFrame, "cursor", 0, 0, "MENU")
+end
+
 function MC.UI:RebuildBrowseRows(parent)
+    -- F2: rebuild profession filter chips from the full unfiltered cache
+    local profChipsRow = MC.UI.profChipsRow
+    if profChipsRow then
+        profChipsRow:ReleaseChildren()
+        local allListings = MC.Cache:GetVisible("", nil)
+        local profSet = {}
+        for _, e in ipairs(allListings) do profSet[e.profName] = true end
+        local profs = {}
+        for p in pairs(profSet) do table.insert(profs, p) end
+        table.sort(profs)
+        if #profs > 0 then
+            local allBtn = AceGUI:Create("Button")
+            allBtn:SetText("[All]")
+            allBtn:SetWidth(50)
+            allBtn:SetDisabled(not MC.UI.profFilter)
+            allBtn:SetCallback("OnClick", function()
+                MC.UI.profFilter = nil
+                MC.UI:RebuildBrowseRows(parent)
+            end)
+            profChipsRow:AddChild(allBtn)
+            for _, p in ipairs(profs) do
+                local chipBtn = AceGUI:Create("Button")
+                chipBtn:SetText(p)
+                chipBtn:SetWidth(90)
+                chipBtn:SetDisabled(MC.UI.profFilter == p)
+                local pCapture = p
+                chipBtn:SetCallback("OnClick", function()
+                    MC.UI.profFilter = pCapture
+                    MC.UI:RebuildBrowseRows(parent)
+                end)
+                profChipsRow:AddChild(chipBtn)
+            end
+        end
+    end
+
     -- Reuse the existing scroll frame and clear its children, rather than
     -- releasing and re-creating it. Releasing doesn't remove the widget from
     -- the parent's children array, which causes stale references and layout bugs.
@@ -267,28 +341,48 @@ function MC.UI:RebuildBrowseRows(parent)
         scroll = AceGUI:Create("ScrollFrame")
         scroll:SetLayout("List")
         scroll:SetFullWidth(true)
-        scroll:SetHeight(300)
+        scroll:SetHeight(275)
         MC.UI.browseScrollFrame = scroll
         parent:AddChild(scroll)
     end
 
     local listings = MC.Cache:GetVisible(MC.UI.searchFilter, MC.UI.sortKey)
 
+    -- F2: apply profession filter
+    if MC.UI.profFilter then
+        local filtered = {}
+        for _, e in ipairs(listings) do
+            if e.profName == MC.UI.profFilter then table.insert(filtered, e) end
+        end
+        listings = filtered
+    end
+
+    -- F10: sort favourites to the top, then by sortKey
+    local favs = MC.db.char.favorites or {}
+    if next(favs) then
+        local sk = MC.UI.sortKey or "itemName"
+        table.sort(listings, function(a, b)
+            local af = favs[a.seller] and 1 or 0
+            local bf = favs[b.seller] and 1 or 0
+            if af ~= bf then return af > bf end
+            return (a[sk] or "") < (b[sk] or "")
+        end)
+    end
+
     -- Header row
     local header = AceGUI:Create("SimpleGroup")
     header:SetFullWidth(true)
     header:SetLayout("Flow")
-    for _, col in ipairs({ "Item", "Profession", "Seller", "" }) do
+    for _, pair in ipairs({ {"Item", 0.27}, {"Profession", 0.22}, {"Seller", 0.31}, {"", 0.18} }) do
         local h = AceGUI:Create("Label")
-        h:SetText(col)
-        h:SetRelativeWidth(col == "" and 0.15 or 0.28)
+        h:SetText(pair[1])
+        h:SetRelativeWidth(pair[2])
         header:AddChild(h)
     end
     scroll:AddChild(header)
 
     if #listings == 0 then
         local empty = AceGUI:Create("Label")
-        -- Friendly first-run message: distinguishes "empty market" from "addon broken".
         empty:SetText("No listings found. Be the first to list — opt in and add a recipe under My Listings!")
         empty:SetFullWidth(true)
         scroll:AddChild(empty)
@@ -298,34 +392,78 @@ function MC.UI:RebuildBrowseRows(parent)
             row:SetFullWidth(true)
             row:SetLayout("Flow")
 
-            -- Icon
+            -- Icon: F8 hover tooltip + shift-click to link in chat
             local icon = AceGUI:Create("Icon")
             icon:SetImage(entry.itemIcon or "Interface\\Icons\\INV_Misc_QuestionMark")
             icon:SetImageSize(16, 16)
             icon:SetWidth(20)
+            local itemID = entry.itemID
+            icon.frame:SetScript("OnEnter", function(self)
+                GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                GameTooltip:SetHyperlink("item:" .. itemID)
+                GameTooltip:Show()
+            end)
+            icon.frame:SetScript("OnLeave", function() GameTooltip:Hide() end)
+            icon.frame:SetScript("OnMouseDown", function(_, button)
+                if button == "LeftButton" and IsShiftKeyDown() then
+                    local _, link = GetItemInfo(itemID)
+                    if link then ChatEdit_InsertLink(link) end
+                end
+            end)
             row:AddChild(icon)
 
             local nameLbl = AceGUI:Create("Label")
             nameLbl:SetText(entry.itemName)
-            nameLbl:SetRelativeWidth(0.26)
+            nameLbl:SetRelativeWidth(0.25)
             row:AddChild(nameLbl)
 
             local profLbl = AceGUI:Create("Label")
             profLbl:SetText(entry.profName)
-            profLbl:SetRelativeWidth(0.27)
+            profLbl:SetRelativeWidth(0.22)
             row:AddChild(profLbl)
 
+            -- Seller + F9 freshness + F11 right-click to hide
+            local ageStr, ar, ag, ab = MC.UI:FormatAge(entry.receivedAt)
+            local colorHex = string.format("%02X%02X%02X",
+                math.floor(ar * 255), math.floor(ag * 255), math.floor(ab * 255))
             local sellerLbl = AceGUI:Create("Label")
-            sellerLbl:SetText(entry.seller)
-            sellerLbl:SetRelativeWidth(0.27)
+            sellerLbl:SetText(entry.seller .. " |cFF" .. colorHex .. ageStr .. "|r")
+            sellerLbl:SetRelativeWidth(0.26)
+            local sellerName = entry.seller
+            sellerLbl.frame:SetScript("OnMouseDown", function(_, button)
+                if button == "RightButton" then ShowBlocklistMenu(sellerName) end
+            end)
             row:AddChild(sellerLbl)
 
+            -- F10: favourite star toggle
+            local isFav = favs[entry.seller]
+            local starBtn = AceGUI:Create("Button")
+            starBtn:SetText(isFav and "|cFFFFD700★|r" or "|cFF888888★|r")
+            starBtn:SetWidth(28)
+            local sn = entry.seller
+            starBtn:SetCallback("OnClick", function()
+                if MC.db.char.favorites[sn] then
+                    MC.db.char.favorites[sn] = nil
+                else
+                    MC.db.char.favorites[sn] = true
+                end
+                MC.UI:RefreshBrowse()
+            end)
+            row:AddChild(starBtn)
+
+            -- Whisper: F4 template expansion
             local whisperBtn = AceGUI:Create("Button")
             whisperBtn:SetText("Whisper")
-            whisperBtn:SetRelativeWidth(0.15)
-            local seller = entry.seller
+            whisperBtn:SetRelativeWidth(0.13)
+            local seller    = entry.seller
+            local itemName  = entry.itemName
+            local profName  = entry.profName
             whisperBtn:SetCallback("OnClick", function()
-                ChatFrame_OpenChat("/w " .. seller .. " ")
+                local tpl = (MC.db.char.settings.whisperTemplate or "/w {seller} "):sub(1, 200)
+                local msg = tpl:gsub("{seller}", seller)
+                               :gsub("{item}",   itemName)
+                               :gsub("{prof}",   profName)
+                ChatFrame_OpenChat(msg)
             end)
             row:AddChild(whisperBtn)
             scroll:AddChild(row)

@@ -214,3 +214,20 @@ function MC.Cache:GetCacheSize()
     end
     return count
 end
+
+--- F3: count distinct sellers with at least one non-expired, non-blocked listing
+function MC.Cache:GetUniqueSellerCount()
+    local count = 0
+    local now = time()
+    for seller, sellerMap in pairs(listings) do
+        if not MC.db.char.blocklist[seller] then
+            for _, entry in pairs(sellerMap) do
+                if now - entry.receivedAt <= TTL then
+                    count = count + 1
+                    break
+                end
+            end
+        end
+    end
+    return count
+end

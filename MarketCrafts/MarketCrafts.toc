@@ -19,6 +19,7 @@ Channel.lua
 Broadcast.lua
 Listener.lua
 Cache.lua
+Requests.lua
 ChatFilter.lua
 MinimapButton.lua
 UI.lua

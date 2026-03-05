@@ -26,9 +26,9 @@ end
 ---------------------------------------------------------------------------
 local state           = "IDLE"   -- IDLE | JOINING | ACTIVE | UNAVAILABLE
 local activeIndex     = nil      -- walk index of the active channel (nil when not active)
-local walkIndex       = nil      -- walk index currently being tried
-local isIntentional   = false    -- flag: current YOU_LEFT was triggered by us
-local stepTimer       = nil      -- AceTimer handle for per-step 5s timeout
+local walkIndex         = nil    -- walk index currently being tried
+local intentionalLeaves = 0      -- count of pending intentional YOU_LEFT events
+local stepTimer         = nil    -- AceTimer handle for per-step 5s timeout
 local retryTimer      = nil
 local MAX_WOW_CHANNELS = 20  -- GetChannelName range to scan for custom channels
 
@@ -96,7 +96,7 @@ local function TryJoinAt(index)
     if customCount >= 10 then
         MC:Print("MarketCrafts: Cannot join market channel — you are at the 10 custom channel limit.")
         state = "UNAVAILABLE"
-        retryTimer = MC:ScheduleTimer(function() Channel:StartWalk() end, 300)
+        retryTimer = MC:ScheduleTimer(function() Channel:StartWalk() end, 60)
         return
     end
 
@@ -113,9 +113,9 @@ local function TryJoinAt(index)
     end, 5)
 end
 
-function Channel:StartWalk()
+function Channel:StartWalk(fromIndex)
     if retryTimer then MC:CancelTimer(retryTimer); retryTimer = nil end
-    TryJoinAt(1)  -- index 1 = "MCMarket", index 2 = "MCMarket1", etc.
+    TryJoinAt(fromIndex or 1)
 end
 
 ---------------------------------------------------------------------------
@@ -132,7 +132,7 @@ function Channel:OnChatMsgChannelNotice(msg, _, _, channelString, _, _, _, chann
 
     -- Debug: only logs MCMarket-related events
     if MC.debugMode then
-        print("MCR DEBUG:", msg, "| ch:", channelName, "| idx:", channelIndex, "| state:", state, "| walk:", walkIndex, "| active:", activeIndex, "| intentional:", tostring(isIntentional))
+        print("MCR DEBUG:", msg, "| ch:", channelName, "| idx:", channelIndex, "| state:", state, "| walk:", walkIndex, "| active:", activeIndex, "| intentionalLeaves:", intentionalLeaves)
     end
 
     -- In TBC Classic, successfully joining a custom channel fires YOU_CHANGED
@@ -143,7 +143,7 @@ function Channel:OnChatMsgChannelNotice(msg, _, _, channelString, _, _, _, chann
 
         -- If this is not the channel we're trying to join, leave it immediately.
         if state ~= "JOINING" or walkIndex ~= matched then
-            isIntentional = true  -- prevent YOU_LEFT from triggering a re-walk
+            intentionalLeaves = intentionalLeaves + 1  -- prevent YOU_LEFT from triggering a re-walk
             SafeLeaveChannel(channelName)
             return
         end
@@ -166,6 +166,23 @@ function Channel:OnChatMsgChannelNotice(msg, _, _, channelString, _, _, _, chann
             MC.Broadcast:StartKeepAlive()
             MC.UI:UpdateStatus()
 
+            -- H2: deferred slot resolve — GetChannelName may return 0 immediately after YOU_CHANGED
+            if not Channel.wowChannelIndex or Channel.wowChannelIndex == 0 then
+                local snapName = channelName
+                MC:ScheduleTimer(function()
+                    if state == "ACTIVE" then
+                        local slot = GetChannelName(snapName)
+                        if slot and slot > 0 then
+                            Channel.wowChannelIndex = slot
+                            MC.UI:UpdateStatus()
+                            if MC.debugMode then
+                                print("MCR: deferred slot resolve →", slot)
+                            end
+                        end
+                    end
+                end, 0.5)
+            end
+
             -- Re-broadcast only if we moved to a different channel
             if prevIndex ~= activeIndex then
                 MC.Broadcast:SendAllListings()
@@ -185,10 +202,9 @@ function Channel:OnChatMsgChannelNotice(msg, _, _, channelString, _, _, _, chann
         -- If it's not our active channel and not intentional, ignore it.
         local leftIndex = ChannelToIndex(channelName)
 
-        if isIntentional then
-            -- Expected: we triggered this leave as part of disable or cleaning
-            -- up an unexpected join. Just clear the flag.
-            isIntentional = false
+        if intentionalLeaves > 0 then
+            -- Expected: we triggered this leave.
+            intentionalLeaves = intentionalLeaves - 1
         elseif leftIndex and leftIndex == activeIndex then
             -- Looks like an unexpected kick from our active channel.
             -- Verify with the API before acting -- TBC can fire spurious YOU_LEFT.
@@ -199,12 +215,13 @@ function Channel:OnChatMsgChannelNotice(msg, _, _, channelString, _, _, _, chann
                     print("MCR: spurious YOU_LEFT ignored, still in slot", stillIn)
                 end
             else
-                -- Genuinely removed -- restart the walk.
+                -- Genuinely removed -- restart from the channel we were on.
+                local kickedFrom = activeIndex
                 activeIndex = nil
                 Channel.wowChannelIndex = nil
                 state = "JOINING"
                 MC.UI:UpdateStatus()
-                Channel:StartWalk()
+                Channel:StartWalk(kickedFrom)
             end
         end
         -- If leftIndex ~= activeIndex and not intentional, it's a stale channel
@@ -231,7 +248,7 @@ function Channel:Disable()
     CancelStepTimer()
     MC.Broadcast:StopKeepAlive()
     if activeIndex then
-        isIntentional = true
+        intentionalLeaves = intentionalLeaves + 1
         state = "IDLE"
         SafeLeaveChannel(ChannelName(activeIndex))
         activeIndex = nil

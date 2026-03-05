@@ -72,14 +72,30 @@ function MC.Broadcast:SendListing(entry)
     local profName = entry.profName:gsub(",", "")
     local itemName = entry.itemName:gsub(",", "")
     local payload
-    -- F1: append note as optional 4th comma field; commas stripped for wire safety.
-    -- Receivers that don't understand the field will safely ignore it via the
-    -- 3-field fallback in ParseListing.
-    if entry.note and entry.note ~= "" then
+
+    -- F6: decay the stored cooldown from the moment it was measured.
+    -- cdSeconds ~= nil means the recipe is time-gated; we always include the field
+    -- so receivers can distinguish "timed recipe, currently ready" (0) from
+    -- "no cooldown at all" (field absent).
+    local currentCD = nil
+    if entry.cdSeconds ~= nil and entry.cdUpdatedAt then
+        currentCD = math.max(0, entry.cdSeconds - (time() - entry.cdUpdatedAt))
+    end
+
+    local hasNote = entry.note and entry.note ~= ""
+
+    if currentCD ~= nil then
+        -- 5-field: note (may be empty) + cooldown — both required for this format
+        local note = hasNote and entry.note:gsub(",", "") or ""
+        payload = string.format("%sL:%d,%s,%s,%s,%d",
+            PREFIX, entry.itemID, profName, itemName, note, currentCD)
+    elseif hasNote then
+        -- 4-field: note, no cooldown
         local note = entry.note:gsub(",", "")
         payload = string.format("%sL:%d,%s,%s,%s",
             PREFIX, entry.itemID, profName, itemName, note)
     else
+        -- 3-field: no note, no cooldown
         payload = string.format("%sL:%d,%s,%s",
             PREFIX, entry.itemID, profName, itemName)
     end

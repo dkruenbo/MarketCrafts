@@ -216,6 +216,29 @@ end
 -- and by RefreshMyListings for in-place updates.
 FillMyListings = function(group)
     local listings = MC.db.char.myListings
+
+    -- Opt-in banner: shown whenever the player has not yet opted in.
+    if not MC.db.char.settings.optedIn then
+        local bannerRow = AceGUI:Create("SimpleGroup")
+        bannerRow:SetFullWidth(true)
+        bannerRow:SetLayout("Flow")
+
+        local bannerLabel = AceGUI:Create("Label")
+        bannerLabel:SetText("|cFFFFCC00You are not broadcasting. Other players cannot see your listings yet.|r")
+        bannerLabel:SetRelativeWidth(0.72)
+        bannerRow:AddChild(bannerLabel)
+
+        local optInBtn = AceGUI:Create("Button")
+        optInBtn:SetText("Opt In")
+        optInBtn:SetRelativeWidth(0.28)
+        optInBtn:SetCallback("OnClick", function()
+            MC:OptIn()
+            MC.UI:RefreshMyListings()
+        end)
+        bannerRow:AddChild(optInBtn)
+        group:AddChild(bannerRow)
+    end
+
     if #listings == 0 then
         local label = AceGUI:Create("Label")
         label:SetText("No active listings.")

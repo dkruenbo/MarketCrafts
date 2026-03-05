@@ -23,7 +23,7 @@ local DB_DEFAULTS = {
             lastBroadcast     = 0,    -- time() of last manual broadcast
             refreshCooldown   = 900,  -- 15 min in seconds
             minimapAngle      = 225,  -- degrees; 225 = bottom-left of minimap ring
-            whisperTemplate   = "Hi {seller}, I'd like {item} crafted!",
+            whisperTemplate   = "/w {seller} Hi, I'd like to get {item} crafted!",
         },
     },
 }

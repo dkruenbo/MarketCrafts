@@ -495,7 +495,7 @@ function MC.UI:RebuildBrowseRows(parent)
         if #profs > 0 then
             local allBtn = AceGUI:Create("Button")
             allBtn:SetText("[All]")
-            allBtn:SetWidth(50)
+            allBtn:SetWidth(70)
             allBtn:SetDisabled(not MC.UI.profFilter)
             allBtn:SetCallback("OnClick", function()
                 MC.UI.profFilter = nil
@@ -543,18 +543,6 @@ function MC.UI:RebuildBrowseRows(parent)
         listings = filtered
     end
 
-    -- F10: sort favourites to the top, then by sortKey
-    local favs = MC.db.char.favorites or {}
-    if next(favs) then
-        local sk = MC.UI.sortKey or "itemName"
-        table.sort(listings, function(a, b)
-            local af = favs[a.seller] and 1 or 0
-            local bf = favs[b.seller] and 1 or 0
-            if af ~= bf then return af > bf end
-            return (a[sk] or "") < (b[sk] or "")
-        end)
-    end
-
     -- Header row (20px spacer matches icon width in data rows)
     local header = AceGUI:Create("SimpleGroup")
     header:SetFullWidth(true)
@@ -563,7 +551,7 @@ function MC.UI:RebuildBrowseRows(parent)
     spacer:SetText("")
     spacer:SetWidth(20)
     header:AddChild(spacer)
-    for _, pair in ipairs({ {"Item", 0.22}, {"Profession", 0.19}, {"Seller", 0.30}, {"", 0.22} }) do
+    for _, pair in ipairs({ {"Item", 0.25}, {"Profession", 0.20}, {"Seller", 0.37}, {"", 0.18} }) do
         local h = AceGUI:Create("Label")
         h:SetText(pair[1])
         h:SetRelativeWidth(pair[2])
@@ -624,12 +612,12 @@ function MC.UI:RebuildBrowseRows(parent)
             else
                 nameLbl:SetText(entry.itemName)
             end
-            nameLbl:SetRelativeWidth(0.22)
+            nameLbl:SetRelativeWidth(0.25)
             row:AddChild(nameLbl)
 
             local profLbl = AceGUI:Create("Label")
             profLbl:SetText(entry.profName)
-            profLbl:SetRelativeWidth(0.19)
+            profLbl:SetRelativeWidth(0.20)
             row:AddChild(profLbl)
 
             -- Seller + F9 freshness + F11 right-click to hide
@@ -638,38 +626,17 @@ function MC.UI:RebuildBrowseRows(parent)
                 math.floor(ar * 255), math.floor(ag * 255), math.floor(ab * 255))
             local sellerLbl = AceGUI:Create("Label")
             sellerLbl:SetText(entry.seller .. " |cFF" .. colorHex .. ageStr .. "|r")
-            sellerLbl:SetRelativeWidth(0.30)
+            sellerLbl:SetRelativeWidth(0.37)
             local sellerName = entry.seller
             sellerLbl.frame:SetScript("OnMouseDown", function(_, button)
                 if button == "RightButton" then ShowBlocklistMenu(sellerName) end
             end)
             row:AddChild(sellerLbl)
 
-            -- F10: favourite star toggle — uses the in-game raid-target star icon
-            local isFav = favs[entry.seller]
-            local starIcon = AceGUI:Create("Icon")
-            starIcon:SetImage("Interface\\TargetingFrame\\UI-RaidTargetingIcon_8")
-            starIcon:SetImageSize(16, 16)
-            starIcon:SetWidth(22)
-            if not isFav then
-                -- Dim when not favourited
-                starIcon.image:SetVertexColor(0.35, 0.35, 0.35)
-            end
-            local sn = entry.seller
-            starIcon:SetCallback("OnClick", function()
-                if MC.db.char.favorites[sn] then
-                    MC.db.char.favorites[sn] = nil
-                else
-                    MC.db.char.favorites[sn] = true
-                end
-                MC.UI:RefreshBrowse()
-            end)
-            row:AddChild(starIcon)
-
             -- Whisper: F4 template expansion
             local whisperBtn = AceGUI:Create("Button")
             whisperBtn:SetText("Whisper")
-            whisperBtn:SetRelativeWidth(0.15)
+            whisperBtn:SetRelativeWidth(0.18)
             local seller    = entry.seller
             local itemName  = entry.itemName
             local profName  = entry.profName

@@ -17,7 +17,7 @@ local DB_DEFAULTS = {
         myListings  = {},   -- up to 5 entries: { itemID, profName, itemName }
         myRequests  = {},   -- F7: up to 3 buyer WTB requests: { itemName, note }
         blocklist   = {},   -- { ["PlayerName"] = true }
-        favorites   = {},   -- { ["PlayerName"] = true }
+        favorites   = {},   -- kept for SavedVariables compat, no longer used
         settings    = {
             optedIn           = false,
             lastBroadcast     = 0,    -- time() of last manual broadcast
@@ -96,13 +96,6 @@ function MC:HandleSlashCommand(input)
             MC:Print("Template: " .. (MC.db.char.settings.whisperTemplate or "(none)"))
             MC:Print("Tokens: {seller}, {item}, {prof}")
         end
-    elseif cmd == "favorites" then
-        local count = 0
-        for name in pairs(MC.db.char.favorites) do
-            MC:Print("★ " .. name)
-            count = count + 1
-        end
-        if count == 0 then MC:Print("No favourite sellers.") end
     elseif cmd == "importalt" then
         -- F5: snapshot current char's listings into the account-scoped alt store
         MC:ImportAlt()
@@ -123,8 +116,7 @@ function MC:HandleSlashCommand(input)
         MC:Print("/mc debug — toggle debug mode")
         MC:Print("/mc sim <N> — inject N fake sellers (debug mode)")
         MC:Print("/mc sim clear — remove simulated data")
-        MC:Print("/mc template [text] — view/set whisper template ({seller},{item},{prof})")
-        MC:Print("/mc favorites — list starred sellers")
+        MC:Print("/mc template [text] — view/set whisper template ({seller},{item},{prof})")        
         MC:Print("/mc unignore <Player> — unblock (or right-click seller in Browse)")
     else
         MC:Print("Unknown command. Type /mc help.")

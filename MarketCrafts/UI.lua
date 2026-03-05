@@ -252,7 +252,7 @@ FillMyListings = function(group)
             local lbl = AceGUI:Create("Label")
             -- F1: display crafter note inline when present
             local noteStr = (entry.note and entry.note ~= "")
-                and (" |cFF888888\226\128\148 " .. entry.note .. "|r")
+                and (" |cFF888888-- " .. entry.note .. "|r")
                 or ""
             lbl:SetText(string.format("[%s] %s", entry.profName, entry.itemName) .. noteStr)
             lbl:SetRelativeWidth(0.75)
@@ -355,7 +355,7 @@ FillMyListings = function(group)
                     row:SetLayout("Flow")
 
                     local noteStr = (entry.note and entry.note ~= "")
-                        and (" |cFF888888\226\128\148 " .. entry.note .. "|r")
+                        and (" |cFF888888-- " .. entry.note .. "|r")
                         or ""
                     local lbl = AceGUI:Create("Label")
                     lbl:SetText(string.format("|cFFAAAAFF[%s]|r [%s] %s",
@@ -555,11 +555,15 @@ function MC.UI:RebuildBrowseRows(parent)
         end)
     end
 
-    -- Header row
+    -- Header row (20px spacer matches icon width in data rows)
     local header = AceGUI:Create("SimpleGroup")
     header:SetFullWidth(true)
     header:SetLayout("Flow")
-    for _, pair in ipairs({ {"Item", 0.27}, {"Profession", 0.22}, {"Seller", 0.31}, {"", 0.18} }) do
+    local spacer = AceGUI:Create("Label")
+    spacer:SetText("")
+    spacer:SetWidth(20)
+    header:AddChild(spacer)
+    for _, pair in ipairs({ {"Item", 0.22}, {"Profession", 0.19}, {"Seller", 0.30}, {"", 0.22} }) do
         local h = AceGUI:Create("Label")
         h:SetText(pair[1])
         h:SetRelativeWidth(pair[2])
@@ -620,12 +624,12 @@ function MC.UI:RebuildBrowseRows(parent)
             else
                 nameLbl:SetText(entry.itemName)
             end
-            nameLbl:SetRelativeWidth(0.25)
+            nameLbl:SetRelativeWidth(0.22)
             row:AddChild(nameLbl)
 
             local profLbl = AceGUI:Create("Label")
             profLbl:SetText(entry.profName)
-            profLbl:SetRelativeWidth(0.22)
+            profLbl:SetRelativeWidth(0.19)
             row:AddChild(profLbl)
 
             -- Seller + F9 freshness + F11 right-click to hide
@@ -634,20 +638,25 @@ function MC.UI:RebuildBrowseRows(parent)
                 math.floor(ar * 255), math.floor(ag * 255), math.floor(ab * 255))
             local sellerLbl = AceGUI:Create("Label")
             sellerLbl:SetText(entry.seller .. " |cFF" .. colorHex .. ageStr .. "|r")
-            sellerLbl:SetRelativeWidth(0.26)
+            sellerLbl:SetRelativeWidth(0.30)
             local sellerName = entry.seller
             sellerLbl.frame:SetScript("OnMouseDown", function(_, button)
                 if button == "RightButton" then ShowBlocklistMenu(sellerName) end
             end)
             row:AddChild(sellerLbl)
 
-            -- F10: favourite star toggle
+            -- F10: favourite star toggle — uses the in-game raid-target star icon
             local isFav = favs[entry.seller]
-            local starBtn = AceGUI:Create("Button")
-            starBtn:SetText(isFav and "|cFFFFD700★|r" or "|cFF888888★|r")
-            starBtn:SetWidth(28)
+            local starIcon = AceGUI:Create("Icon")
+            starIcon:SetImage("Interface\\TargetingFrame\\UI-RaidTargetingIcon_8")
+            starIcon:SetImageSize(16, 16)
+            starIcon:SetWidth(22)
+            if not isFav then
+                -- Dim when not favourited
+                starIcon.image:SetVertexColor(0.35, 0.35, 0.35)
+            end
             local sn = entry.seller
-            starBtn:SetCallback("OnClick", function()
+            starIcon:SetCallback("OnClick", function()
                 if MC.db.char.favorites[sn] then
                     MC.db.char.favorites[sn] = nil
                 else
@@ -655,12 +664,12 @@ function MC.UI:RebuildBrowseRows(parent)
                 end
                 MC.UI:RefreshBrowse()
             end)
-            row:AddChild(starBtn)
+            row:AddChild(starIcon)
 
             -- Whisper: F4 template expansion
             local whisperBtn = AceGUI:Create("Button")
             whisperBtn:SetText("Whisper")
-            whisperBtn:SetRelativeWidth(0.13)
+            whisperBtn:SetRelativeWidth(0.15)
             local seller    = entry.seller
             local itemName  = entry.itemName
             local profName  = entry.profName
@@ -681,7 +690,7 @@ function MC.UI:RebuildBrowseRows(parent)
                 detailRow:SetLayout("List")
                 if hasNote then
                     local noteLbl = AceGUI:Create("Label")
-                    noteLbl:SetText("|cFFCCCCCC  \226\134\179 " .. entry.note .. "|r")
+                    noteLbl:SetText("|cFFCCCCCC  > " .. entry.note .. "|r")
                     noteLbl:SetFullWidth(true)
                     detailRow:AddChild(noteLbl)
                 end

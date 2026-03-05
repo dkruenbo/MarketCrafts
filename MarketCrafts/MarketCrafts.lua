@@ -15,7 +15,7 @@ local DB_DEFAULTS = {
     },
     char = {
         myListings  = {},   -- up to 5 entries: { itemID, profName, itemName }
-        myRequests  = {},   -- F7: up to 3 buyer WTB requests: { itemID, itemName, note }
+        myRequests  = {},   -- F7: up to 3 buyer WTB requests: { itemName, note }
         blocklist   = {},   -- { ["PlayerName"] = true }
         favorites   = {},   -- { ["PlayerName"] = true }
         settings    = {
@@ -113,9 +113,8 @@ function MC:HandleSlashCommand(input)
         -- F5: snapshot current char's listings into the account-scoped alt store
         MC:ImportAlt()
     elseif cmd == "request" then
-        -- F7: open main window on the Requests tab
-        MC.UI:Toggle()
-        MC.UI:ShowRequestsTab()
+        -- F7: open main window directly on the Requests tab
+        MC.UI:Open("requests")
     elseif cmd == "sim" then
         MC.MockData:HandleSimCommand(arg)
     elseif cmd == "help" then
@@ -214,12 +213,14 @@ end
 -- F7 — Buyer request management
 ---------------------------------------------------------------------------
 
-function MC:AddMyRequest(itemID, itemName, note)
+function MC:AddMyRequest(itemName, note)
+    if not itemName or itemName == "" then return false end
     local cleanNote = (note and note:match("^%s*(.-)%s*$") or "")
     cleanNote = (cleanNote ~= "") and cleanNote:sub(1, 60) or nil
     local requests = self.db.char.myRequests
+    local nameKey = itemName:lower()
     for _, entry in ipairs(requests) do
-        if entry.itemID == itemID then
+        if entry.itemName:lower() == nameKey then
             entry.itemName = itemName
             entry.note     = cleanNote
             MC.Broadcast:SendRequest(entry)
@@ -230,18 +231,20 @@ function MC:AddMyRequest(itemID, itemName, note)
         MC:Print("You can only post up to 3 requests.")
         return false
     end
-    local newEntry = { itemID = itemID, itemName = itemName, note = cleanNote }
+    local newEntry = { itemName = itemName, note = cleanNote }
     table.insert(requests, newEntry)
     MC.Broadcast:SendRequest(requests[#requests])
     return true
 end
 
-function MC:RemoveMyRequest(itemID)
+function MC:RemoveMyRequest(itemName)
+    if not itemName or itemName == "" then return false end
     local requests = self.db.char.myRequests
+    local nameKey = itemName:lower()
     for i, entry in ipairs(requests) do
-        if entry.itemID == itemID then
+        if entry.itemName:lower() == nameKey then
             table.remove(requests, i)
-            MC.Broadcast:SendRequestRemove(itemID)
+            MC.Broadcast:SendRequestRemove(entry.itemName)
             return true
         end
     end

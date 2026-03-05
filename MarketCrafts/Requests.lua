@@ -1,5 +1,5 @@
 -- Requests.lua — F7: Buyer request board (WTB posts)
--- Mirrors the architecture of Cache.lua but is keyed by buyer name + itemID.
+-- Mirrors the architecture of Cache.lua but is keyed by buyer name + itemName.
 -- Wire types handled by Listener.lua: [MCR]Q: (add/update) and [MCR]QR: (remove).
 local AddonName, NS = ...
 local MC = NS.MC
@@ -14,9 +14,9 @@ local MAX_PER_BUYER = 3     -- hard cap on requests per buyer
 ---------------------------------------------------------------------------
 -- State
 ---------------------------------------------------------------------------
--- requests[sender][itemID] = { buyer, itemID, itemName, note, itemIcon, receivedAt }
-local requests     = {}
-local pendingIcons = {}
+-- requests[sender][nameKey] = { buyer, itemName, note, receivedAt }
+-- nameKey = itemName:lower() for case-insensitive dedup
+local requests = {}
 
 ---------------------------------------------------------------------------
 -- Public API
@@ -24,18 +24,20 @@ local pendingIcons = {}
 function MC.Requests:AddOrUpdate(entry)
     local sender = entry.buyer
     if not sender or sender == "" then return end
+    if not entry.itemName or entry.itemName == "" then return end
     -- Respect blocklist
     if MC.db.char.blocklist[sender] then return end
 
     requests[sender] = requests[sender] or {}
     local buyerTable = requests[sender]
     local now = time()
+    local nameKey = entry.itemName:lower()
 
     -- Update if already present
-    if buyerTable[entry.itemID] then
-        buyerTable[entry.itemID].receivedAt = now
-        buyerTable[entry.itemID].note       = entry.note
-        if entry.itemName then buyerTable[entry.itemID].itemName = entry.itemName end
+    if buyerTable[nameKey] then
+        buyerTable[nameKey].receivedAt = now
+        buyerTable[nameKey].note       = entry.note
+        buyerTable[nameKey].itemName   = entry.itemName
         MC.UI:RefreshRequests()
         return
     end
@@ -46,36 +48,21 @@ function MC.Requests:AddOrUpdate(entry)
     if count >= MAX_PER_BUYER then return end
 
     -- Store entry
-    buyerTable[entry.itemID] = {
+    buyerTable[nameKey] = {
         buyer      = sender,
-        itemID     = entry.itemID,
         itemName   = entry.itemName,
         note       = entry.note,
-        itemIcon   = nil,
         receivedAt = now,
-        _simulated = entry._simulated or nil,
     }
-
-    -- Async icon resolution (same pattern as Cache.lua)
-    if entry.itemID and entry.itemID > 0 then
-        local name, _, _, _, _, _, _, _, _, icon = GetItemInfo(entry.itemID)
-        if icon then
-            buyerTable[entry.itemID].itemIcon = icon
-            if name then buyerTable[entry.itemID].itemName = name end
-        else
-            pendingIcons[entry.itemID] = true
-            MC:ScheduleTimer(function()
-                pendingIcons[entry.itemID] = nil
-            end, 30)
-        end
-    end
 
     MC.UI:RefreshRequests()
 end
 
-function MC.Requests:Remove(buyer, itemID)
+function MC.Requests:Remove(buyer, itemName)
+    if not itemName or itemName == "" then return end
+    local nameKey = itemName:lower()
     if requests[buyer] then
-        requests[buyer][itemID] = nil
+        requests[buyer][nameKey] = nil
         if not next(requests[buyer]) then
             requests[buyer] = nil
         end
@@ -124,9 +111,9 @@ end
 local function Purge()
     local now = time()
     for sender, buyerTable in pairs(requests) do
-        for itemID, entry in pairs(buyerTable) do
+        for nameKey, entry in pairs(buyerTable) do
             if now - entry.receivedAt > TTL then
-                buyerTable[itemID] = nil
+                buyerTable[nameKey] = nil
             end
         end
         if not next(buyerTable) then
@@ -137,19 +124,5 @@ end
 
 function MC.Requests:Enable()
     MC:ScheduleRepeatingTimer(Purge, 60)
-
-    -- Resolve icons for requests received before GetItemInfo had the data
-    MC:RegisterEvent("GET_ITEM_INFO_RECEIVED", function(_, itemID)
-        if not pendingIcons[itemID] then return end
-        local name, _, _, _, _, _, _, _, _, icon = GetItemInfo(itemID)
-        if not icon then return end
-        pendingIcons[itemID] = nil
-        for _, buyerTable in pairs(requests) do
-            if buyerTable[itemID] then
-                buyerTable[itemID].itemIcon = icon
-                if name then buyerTable[itemID].itemName = name end
-            end
-        end
-        MC.UI:RefreshRequests()
-    end)
+    -- No GET_ITEM_INFO_RECEIVED needed — requests are name-based, no itemID to resolve.
 end

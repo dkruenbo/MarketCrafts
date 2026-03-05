@@ -109,8 +109,22 @@ end
 
 function MC.Broadcast:SendAllListings()
     if not MC.db.char.settings.optedIn then return end
+    -- Broadcast own listings
     for _, entry in ipairs(MC.db.char.myListings) do
         MC.Broadcast:SendListing(entry)
+    end
+    -- F5: broadcast imported alt profiles (different characters on same account)
+    local altListings = MC.db.global and MC.db.global.altListings or {}
+    local myRealm  = GetRealmName() or ""
+    local myChar   = UnitName("player") or ""
+    local myKey    = myRealm .. "-" .. myChar
+    for key, entries in pairs(altListings) do
+        -- Skip the current character's own profile (already sent above)
+        if key ~= myKey then
+            for _, entry in ipairs(entries) do
+                MC.Broadcast:SendListing(entry)
+            end
+        end
     end
 end
 

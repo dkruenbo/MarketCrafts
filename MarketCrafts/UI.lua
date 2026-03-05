@@ -242,6 +242,79 @@ FillMyListings = function(group)
         hint:SetFullWidth(true)
         group:AddChild(hint)
     end
+
+    -- F5: Alt Listings — entries imported from other characters on this account.
+    -- Only shown when at least one alt profile exists.
+    local altListings  = MC.db.global and MC.db.global.altListings or {}
+    local myRealm      = GetRealmName() or ""
+    local myChar       = UnitName("player") or ""
+    local myKey        = myRealm .. "-" .. myChar
+    local altCount     = 0
+    for k, entries in pairs(altListings) do
+        if k ~= myKey and entries then altCount = altCount + #entries end
+    end
+
+    if altCount > 0 then
+        local altHeader = AceGUI:Create("Heading")
+        altHeader:SetText("Alt Listings (broadcasting on your behalf)")
+        altHeader:SetFullWidth(true)
+        group:AddChild(altHeader)
+
+        for key, entries in pairs(altListings) do
+            if key ~= myKey and entries and #entries > 0 then
+                -- Extract character name from "Realm-CharName" key
+                local altName = key:match("%-(.+)$") or key
+                for _, entry in ipairs(entries) do
+                    local row = AceGUI:Create("SimpleGroup")
+                    row:SetFullWidth(true)
+                    row:SetLayout("Flow")
+
+                    local noteStr = (entry.note and entry.note ~= "")
+                        and (" |cFF888888\226\128\148 " .. entry.note .. "|r")
+                        or ""
+                    local lbl = AceGUI:Create("Label")
+                    lbl:SetText(string.format("|cFFAAAAFF[%s]|r [%s] %s",
+                        altName, entry.profName, entry.itemName) .. noteStr)
+                    lbl:SetRelativeWidth(0.75)
+                    row:AddChild(lbl)
+
+                    local removeBtn = AceGUI:Create("Button")
+                    removeBtn:SetText("Remove")
+                    removeBtn:SetRelativeWidth(0.25)
+                    local capturedKey = key
+                    local capturedID  = entry.itemID
+                    removeBtn:SetCallback("OnClick", function()
+                        local list = MC.db.global.altListings[capturedKey]
+                        if list then
+                            for i, e in ipairs(list) do
+                                if e.itemID == capturedID then
+                                    table.remove(list, i)
+                                    break
+                                end
+                            end
+                            if #list == 0 then
+                                MC.db.global.altListings[capturedKey] = nil
+                            end
+                        end
+                        MC.UI:RefreshMyListings()
+                    end)
+                    row:AddChild(removeBtn)
+                    group:AddChild(row)
+                end
+            end
+        end
+
+        local clearBtn = AceGUI:Create("Button")
+        clearBtn:SetText("Clear All Alt Profiles")
+        clearBtn:SetFullWidth(true)
+        clearBtn:SetCallback("OnClick", function()
+            for k in pairs(MC.db.global.altListings) do
+                if k ~= myKey then MC.db.global.altListings[k] = nil end
+            end
+            MC.UI:RefreshMyListings()
+        end)
+        group:AddChild(clearBtn)
+    end
 end
 
 function MC.UI:BuildMyListingsPanel(parent)

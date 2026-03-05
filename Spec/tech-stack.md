@@ -193,11 +193,53 @@ UI.lua
 
 ---
 
-## Open Decisions
+## Resolved Decisions
 
-| # | Decision | Options | Notes |
-|---|---|---|---|
-| 1 | Interface version number | `20504` or `20505` | Verify against live TBC 2.5.5 build on release |
-| 2 | Rate limit threshold | Messages per minute cap per sender | Default suggested: 10 msg/min |
-| 3 | Keep-alive jitter | Exact random spread on the 25-min timer | Small jitter (±30 s) prevents all users firing simultaneously |
-| 4 | Re-validate cycle interval | How often to leave + rejoin from index 0 | Default: 10 minutes; shorter = faster convergence but more channel churn |
+| # | Decision | Resolution |
+|---|---|---|
+| 1 | Interface version number | `20504` |
+| 2 | Rate limit threshold | 10 msg/min per sender |
+| 3 | Keep-alive interval | 20 minutes; login jitter (10–15s random) provides staggering |
+| 4 | Re-validate cycle | Removed — convergence handled by login walk + unexpected-kick re-walk from `activeIndex` |
+
+---
+
+## As-Built Addendum (March 2026)
+
+### Additional Files
+
+| File | Purpose |
+|---|---|
+| `Requests.lua` | F7 buyer request cache — name-keyed, TTL 1800s, max 3/buyer |
+| `MinimapButton.lua` | Draggable minimap button with live crafter count tooltip |
+| `MockData.lua` | `/mc sim N` and `/mc sim clear` for single-account testing |
+
+### Wire Format (as-built)
+
+The original 3-field listing format was extended:
+
+```
+[MCR]L:<itemID>,<prof>,<name>                    -- 3-field (original)
+[MCR]L:<itemID>,<prof>,<name>,<note>              -- 4-field (F1 crafter notes)
+[MCR]L:<itemID>,<prof>,<name>,<note>,<cdSeconds>  -- 5-field (F6 cooldown)
+[MCR]R:<itemID>                                    -- remove listing
+[MCR]Q:<itemName>[,<note>]                         -- F7 buyer request
+[MCR]QR:<itemName>                                 -- F7 remove buyer request
+```
+
+Request messages (`Q`/`QR`) are name-based (no itemID) — the request picker accepts free-text item names.
+
+### SavedVariables (as-built)
+
+AceDB-3.0 now uses both `char` and `global` profiles:
+- `global.altListings` — F5 cross-alt listing sync, keyed by `"Realm-CharName"`
+- `char.myRequests` — F7 buyer WTB entries (up to 3), keyed by `itemName`
+- `char.favorites` — F10 starred sellers
+- `char.settings.whisperTemplate` — F4 customisable whisper text
+- `char.settings.minimapAngle` — minimap button position (radians)
+
+### UI Framework Notes
+
+- The main window uses an `AceGUI TabGroup` with three tabs (My Listings / Browse / Requests)
+- Each tab gets a fresh `ScrollFrame` child on select; panel-specific widget refs are nil'd between tabs
+- Per-panel debounce timers prevent cross-cancellation during rapid cache updates

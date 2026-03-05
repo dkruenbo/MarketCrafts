@@ -300,12 +300,92 @@ Standalone window, opened via `/mc` or a minimap button.
 
 ## TOS & Blizzard Compliance Checklist
 
-- [ ] Max 5 listings per player (enforced in both UI and incoming message validation)
-- [ ] No automated matching or trade execution of any kind
-- [ ] No price data collection or aggregation
-- [ ] 100% opt-in — no data transmitted unless player explicitly opts in and lists a recipe
-- [ ] Human-readable wire format — no compressed or serialised blobs (avoids spam-filter gibberish triggers)
-- [ ] Broadcast-only protocol — no request/response, no message storms
-- [ ] Outgoing messages spaced ≥ 1 second apart
-- [ ] Silent back-off on server-side spam-filter mute
-- [ ] Non-addon users see raw `[MCR]L:` text — intentionally human-readable, not obfuscated
+- [x] Max 5 listings per player (enforced in both UI and incoming message validation)
+- [x] No automated matching or trade execution of any kind
+- [x] No price data collection or aggregation
+- [x] 100% opt-in — no data transmitted unless player explicitly opts in and lists a recipe
+- [x] Human-readable wire format — no compressed or serialised blobs (avoids spam-filter gibberish triggers)
+- [x] Broadcast-only protocol — no request/response message storms (F7 requests use the same passive broadcast model)
+- [x] Outgoing messages spaced ≥ 1.5 seconds apart (with 3s back-off spacing during throttle)
+- [x] Silent back-off on server-side spam-filter mute (5-minute suppression window)
+- [x] Non-addon users see raw `[MCR]L:` / `[MCR]Q:` text — intentionally human-readable, not obfuscated
+
+---
+
+## As-Built Addendum (March 2026)
+
+The sections above represent the **original design spec** written on 2 March 2026. The following documents deviations and additions made during implementation.
+
+### Wire Format Extensions
+
+The original 3-field listing format was extended to support crafter notes (F1) and cooldown broadcast (F6). A new request protocol (F7) was added for buyer WTB posts.
+
+| Prefix | Format | Added In |
+|---|---|---|
+| `[MCR]L:` | `itemID,prof,name,note,cdSeconds` | F1 (4-field note), F6 (5-field cooldown) |
+| `[MCR]Q:` | `itemName[,note]` | F7 — buyer request |
+| `[MCR]QR:` | `itemName` | F7 — buyer request remove |
+
+Parsers use cascade matching (5→4→3 field) for backward compatibility.
+
+### Additional Modules
+
+| File | Purpose | Added In |
+|---|---|---|
+| `Requests.lua` | Buyer request cache (TTL 1800s, max 3/buyer, name-keyed) | F7 |
+| `MinimapButton.lua` | Draggable minimap button with live crafter count | M6 |
+| `MockData.lua` | `/mc sim` testing framework | M6 |
+
+### SavedVariables Schema (as-built)
+
+```lua
+MarketCraftsDB = {
+    global = {
+        altListings = {  -- F5: keyed by "Realm-CharName"
+            ["Realm-Alt"] = { { itemID, profName, itemName, note }, ... }
+        },
+    },
+    char = {
+        myListings = {  -- up to 5
+            { itemID, profName, itemName, note, cdSeconds, cdUpdatedAt },
+        },
+        myRequests = {  -- F7: up to 3
+            { itemName, note },
+        },
+        blocklist  = { ["Name"] = true },
+        favorites  = { ["Name"] = true },  -- F10
+        settings = {
+            optedIn           = false,
+            lastBroadcast     = 0,
+            refreshCooldown   = 900,
+            minimapAngle      = 225,       -- radians, minimap button position
+            whisperTemplate   = "Hi {seller}, I'd like {item} crafted!",  -- F4
+        },
+    },
+}
+```
+
+### Additional Slash Commands
+
+| Command | Added In |
+|---|---|
+| `/mc importalt` | F5 — cross-alt listing sync |
+| `/mc request` | F7 — open Requests tab |
+| `/mc template [text]` | F4 — whisper template |
+| `/mc favorites` | F10 — list starred sellers |
+
+### UI Changes
+
+- Window uses a **TabGroup** with three tabs: My Listings, Browse, Requests (F7)
+- Browse panel has **profession filter chips** (F2), **favourite star toggle** (F10), **expandable note/cooldown rows** (F1/F6), **freshness colour coding** (F9), **item tooltips + shift-click** (F8), and **right-click blocklist** (F11)
+- My Listings panel shows **alt listings** section with per-entry remove and "Clear All" (F5)
+- Recipe picker includes a **crafter note** field and captures **cooldown snapshot** from the open tradeskill window
+
+### Resolved Design Decisions
+
+| # | Decision | Resolution |
+|---|---|---|
+| 1 | Interface version | `20504` |
+| 2 | Rate limit threshold | 10 msg/min per sender |
+| 3 | Keep-alive interval | 20 minutes (no jitter — staggered by login-delay randomness) |
+| 4 | Re-validate cycle | Removed (convergence handled by login walk + kick re-walk) |

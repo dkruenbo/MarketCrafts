@@ -1,0 +1,100 @@
+[B]MarketCrafts[/B] turns custom chat channels into a server-wide crafting service board — no guild, no Discord, no add-on website required. Open the Market window, find a crafter, and whisper them in one click. Buyers can also post "Want to Buy" requests so crafters know what's in demand.
+
+[IMG]https://i.imgur.com/placeholder.png[/IMG]
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[B]What it does[/B]
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Crafters opt in to advertise up to 5 recipes they are available to make — with optional notes and live cooldown timers. Buyers can browse listings in real time, search by item name, profession, or seller, open a whisper with one click, and post their own WTB requests on the Request Board.
+
+Everything happens invisibly over a hidden custom channel ([B]MCMarket[/B]). No chat spam — the [MCR] protocol messages are silently filtered from all chat windows.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[B]Key Features[/B]
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+[LIST]
+[*][B]Browse panel[/B] — searchable, sortable table of crafters online right now. Filter by item name, profession, or seller name. Profession filter chips let you narrow results to a single profession with one click. One-click Whisper button on every row.
+[*][B]Request Board[/B] — buyers can post up to 3 "Want to Buy" requests so crafters know what's in demand. Requests expire after 30 minutes and are broadcast to all addon users.
+[*][B]My Listings[/B] — advertise up to 5 recipes. Open your Spellbook → Profession window, then click [B]Add from Profession[/B] to pick directly from your recipe list. Includes a live search box for characters with hundreds of recipes. Add an optional [B]crafter note[/B] to each listing (e.g. "free if you bring mats").
+[*][B]Cooldown display[/B] — if a listed recipe has a crafting cooldown (e.g. Mooncloth, Transmutes), the remaining time is broadcast and shown in the Browse panel so buyers know when you'll be ready.
+[*][B]Favourite sellers[/B] — click the star icon next to any crafter to mark them as a favourite. Favourites are highlighted in the Browse panel.
+[*][B]Cross-alt sync[/B] — type [B]/mc importalt[/B] on each character to save that alt's listings to your account. All alts' recipes appear under "Alt Listings" on every character's My Listings tab.
+[*][B]Customisable whisper[/B] — set your own whisper template with [B]/mc template[/B]. Use {seller} and {item} placeholders to personalise the message.
+[*][B]Item tooltips[/B] — hover over any listing to see the full in-game item tooltip. Shift-click to link the item into chat.
+[*][B]Freshness indicators[/B] — listing rows are colour-coded green / yellow / red based on how recently the crafter was seen, so you can tell at a glance who is actively online.
+[*][B]Fully opt-in[/B] — nothing is broadcast until you explicitly run [B]/mc optin[/B]. [B]/mc optout[/B] stops all broadcasting instantly.
+[*][B]Zero chat spam[/B] — all protocol traffic is intercepted and hidden before it reaches any chat frame.
+[*][B]Anti-abuse[/B] — rate limiting (10 messages/min per sender), max 5 listings per player, 30-minute TTL with automatic expiry.
+[*][B]Blocklist[/B] — [B]/mc ignore PlayerName[/B] or right-click a listing in the Browse panel to permanently hide a player.
+[*][B]Minimap button[/B] — draggable button with a tooltip showing how many crafters are currently online. Click to open the Market window.
+[*][B]Automatic channel management[/B] — joins the lowest available MCMarket channel on login. Recovers gracefully if kicked. No configuration needed.
+[*][B]No external dependencies[/B] — all Ace3 libraries are bundled. Drop in and go.
+[*][B]Taint-safe[/B] — zero use of protected API calls; safe to use in combat.
+[/LIST]
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[B]Installation[/B]
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+[LIST=1]
+[*]Download the latest release zip.
+[*]Extract the [B]MarketCrafts[/B] folder into:[LIST][*][B]World of Warcraft\_classic_tbc_\Interface\AddOns\[/B][/LIST]
+[*]Log in and type [B]/mc help[/B] to confirm the addon loaded.
+[/LIST]
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[B]Quick Start[/B]
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+[B]As a crafter:[/B]
+[LIST=1]
+[*]Open your Spellbook and click a Profession to open the craft window.
+[*]Type [B]/mc[/B] to open the Market window and go to the [B]My Listings[/B] tab.
+[*]Click [B]Add from Profession[/B] and pick the recipes you want to advertise. Optionally add a note to each listing.
+[*]Type [B]/mc optin[/B] to start broadcasting your listings to other players.
+[/LIST]
+
+[B]As a buyer:[/B]
+[LIST=1]
+[*]Type [B]/mc[/B] or click the minimap button to open the Market window.
+[*]Use the [B]Browse[/B] tab to search for items. Filter by profession, star your favourite crafters, and hover items for tooltips.
+[*]Click [B]Whisper[/B] to contact the crafter directly.
+[*]Switch to the [B]Requests[/B] tab to post a "Want to Buy" request so crafters know what you need.
+[/LIST]
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[B]Slash Commands[/B]
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+[table]
+[tr][td][B]/mc[/B][/td][td]Open / close the Market window[/td][/tr]
+[tr][td][B]/mc optin[/B][/td][td]Start broadcasting your listings[/td][/tr]
+[tr][td][B]/mc optout[/B][/td][td]Stop broadcasting[/td][/tr]
+[tr][td][B]/mc list[/B][/td][td]Print your active listings to chat[/td][/tr]
+[tr][td][B]/mc request[/B][/td][td]Open the Request Board tab[/td][/tr]
+[tr][td][B]/mc template [text][/B][/td][td]Set your whisper template ({seller}, {item} placeholders)[/td][/tr]
+[tr][td][B]/mc favorites[/B][/td][td]List your starred sellers[/td][/tr]
+[tr][td][B]/mc importalt[/B][/td][td]Save this character's listings for cross-alt display[/td][/tr]
+[tr][td][B]/mc ignore [name][/B][/td][td]Hide a player's listings[/td][/tr]
+[tr][td][B]/mc unignore [name][/B][/td][td]Restore a player's listings[/td][/tr]
+[tr][td][B]/mc sim [N][/B][/td][td]Inject N fake listings for testing (dev/testing only)[/td][/tr]
+[tr][td][B]/mc help[/B][/td][td]Print all commands[/td][/tr]
+[/table]
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[B]Compatibility[/B]
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+[LIST]
+[*][B]Game version:[/B] WoW TBC Classic 2.5.5 (interface 20504)
+[*][B]Retail / Classic Era / Wrath:[/B] Not supported
+[*]Works best when multiple players on the same realm have the addon installed — the more crafters that opt in, the more useful the Browse panel becomes.
+[/LIST]
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[B]Reporting Issues[/B]
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Please use the [URL=https://github.com/dkruenbo/MarketCrafts/issues]GitHub issue tracker[/URL] to report bugs. Include the output of [B]/mc debug[/B] enabled during the issue if possible.

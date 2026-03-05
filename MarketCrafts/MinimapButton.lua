@@ -63,10 +63,16 @@ function MinimapButton:Create()
     icon:SetPoint("CENTER", btn, "CENTER", 0, 1)
     btn.icon = icon
 
-    -- Tooltip
+    -- Tooltip: F3 live crafter count
     btn:SetScript("OnEnter", function(frame)
         GameTooltip:SetOwner(frame, "ANCHOR_LEFT")
         GameTooltip:AddLine("MarketCrafts")
+        local count = MC.Cache:GetUniqueSellerCount()
+        if count > 0 then
+            GameTooltip:AddLine(count .. " crafter(s) currently online", 1, 1, 1)
+        else
+            GameTooltip:AddLine("No crafters online", 0.6, 0.6, 0.6)
+        end
         GameTooltip:AddLine("|cffffffffLeft-click|r to toggle window", 0.8, 0.8, 0.8)
         GameTooltip:AddLine("|cffffffffDrag|r to reposition", 0.8, 0.8, 0.8)
         GameTooltip:Show()

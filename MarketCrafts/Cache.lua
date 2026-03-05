@@ -80,7 +80,7 @@ function MC.Cache:AddOrUpdate(entry)
         end, 30)
     end
 
-    MC.UI:Refresh()
+    MC.UI:RefreshBrowse()
 end
 
 function MC.Cache:Remove(seller, itemID)
@@ -89,7 +89,7 @@ function MC.Cache:Remove(seller, itemID)
         if not next(listings[seller]) then
             listings[seller] = nil
         end
-        MC.UI:Refresh()
+        MC.UI:RefreshBrowse()
     end
 end
 
@@ -126,12 +126,12 @@ end
 ---------------------------------------------------------------------------
 function MC.Cache:Ignore(name)
     MC.db.char.blocklist[name] = true
-    MC.UI:Refresh()
+    MC.UI:RefreshBrowse()
 end
 
 function MC.Cache:Unignore(name)
     MC.db.char.blocklist[name] = nil
-    MC.UI:Refresh()
+    MC.UI:RefreshBrowse()
 end
 
 ---------------------------------------------------------------------------
@@ -166,7 +166,7 @@ function MC.Cache:OnGetItemInfoReceived(event, itemID)
                 if name then sellerMap[itemID].itemName = name end
             end
         end
-        MC.UI:Refresh()
+        MC.UI:RefreshBrowse()
     end
 end
 
@@ -200,7 +200,7 @@ function MC.Cache:ClearSimulated()
             listings[seller] = nil
         end
     end
-    MC.UI:Refresh()
+    MC.UI:RefreshBrowse()
     return cleared
 end
 

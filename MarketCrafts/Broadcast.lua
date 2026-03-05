@@ -16,6 +16,7 @@ local PREFIX             = "[MCR]"
 ---------------------------------------------------------------------------
 local keepAliveTimer = nil
 local sendQueue      = {}
+local qHead, qTail   = 1, 0    -- ring-buffer head/tail pointers
 local sendTimer      = nil
 local backOffUntil   = 0    -- time() timestamp; all sends suppressed before this
 local spacingUntil   = 0    -- time() timestamp; use BACKOFF_SPACING before this
@@ -28,20 +29,21 @@ end
 -- Internal queue
 ---------------------------------------------------------------------------
 local function FlushQueue()
-    if #sendQueue == 0 then
+    if qHead > qTail then
         sendTimer = nil
         return
     end
-    local msg = sendQueue[1]
+    local msg = sendQueue[qHead]
     if MC.Channel:IsActive() then
-        table.remove(sendQueue, 1)
+        sendQueue[qHead] = nil
+        qHead = qHead + 1
         SendChatMessage(msg, "CHANNEL", nil, MC.Channel.wowChannelIndex)
     else
         -- Channel not active — retry after spacing instead of dropping the message
         sendTimer = MC:ScheduleTimer(FlushQueue, GetSpacing())
         return
     end
-    if #sendQueue > 0 then
+    if qHead <= qTail then
         sendTimer = MC:ScheduleTimer(FlushQueue, GetSpacing())
     else
         sendTimer = nil
@@ -55,7 +57,8 @@ local function Enqueue(msg)
     -- This prevents the keep-alive timer from immediately re-flooding the queue
     -- right after ClearQueue() was called.
     if time() < backOffUntil then return end
-    table.insert(sendQueue, msg)
+    qTail = qTail + 1
+    sendQueue[qTail] = msg
     if not sendTimer then
         sendTimer = MC:ScheduleTimer(FlushQueue, 0.01)  -- near-immediate; AceTimer does not accept 0
     end
@@ -106,7 +109,7 @@ end
 -- Also increases message spacing to BACKOFF_SPACING for the duration.
 ---------------------------------------------------------------------------
 function MC.Broadcast:ClearQueue()
-    sendQueue = {}
+    sendQueue = {}; qHead = 1; qTail = 0
     if sendTimer then MC:CancelTimer(sendTimer); sendTimer = nil end
     backOffUntil = time() + 300  -- suppress all sends for 5 minutes
     spacingUntil = time() + 300  -- slow down spacing for 5 minutes

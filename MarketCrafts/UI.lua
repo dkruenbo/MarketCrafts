@@ -10,6 +10,7 @@ MC.UI = {}
 ---------------------------------------------------------------------------
 local mainFrame = nil
 local refreshTimer = nil  -- debounce timer for Refresh()
+local FillMyListings      -- forward declaration; assigned before BuildMyListingsPanel
 
 ---------------------------------------------------------------------------
 -- Toggle / Open / Refresh
@@ -81,16 +82,40 @@ function MC.UI:Refresh()
     end, 0.1)
 end
 
+-- Partial refresh: rebuild only the My Listings panel in-place (no full window teardown)
+function MC.UI:RefreshMyListings()
+    if not mainFrame then return end
+    if not MC.UI.myListingsGroup then MC.UI:Refresh(); return end
+    if refreshTimer then MC:CancelTimer(refreshTimer) end
+    refreshTimer = MC:ScheduleTimer(function()
+        refreshTimer = nil
+        if not mainFrame or not MC.UI.myListingsGroup then return end
+        local g = MC.UI.myListingsGroup
+        g:SetTitle(string.format("My Listings (%d/5)", #MC.db.char.myListings))
+        g:ReleaseChildren()
+        FillMyListings(g)
+    end, 0.1)
+end
+
+-- Partial refresh: rebuild only the Browse rows (preserves scroll position)
+function MC.UI:RefreshBrowse()
+    if not mainFrame then return end
+    if not MC.UI.browseGroup then MC.UI:Refresh(); return end
+    if refreshTimer then MC:CancelTimer(refreshTimer) end
+    refreshTimer = MC:ScheduleTimer(function()
+        refreshTimer = nil
+        if mainFrame and MC.UI.browseGroup then
+            MC.UI:RebuildBrowseRows(MC.UI.browseGroup)
+        end
+    end, 0.1)
+end
+
 ---------------------------------------------------------------------------
 -- My Listings Panel
 ---------------------------------------------------------------------------
-function MC.UI:BuildMyListingsPanel(parent)
-    local group = AceGUI:Create("InlineGroup")
-    group:SetTitle(string.format("My Listings (%d/5)", #MC.db.char.myListings))
-    group:SetFullWidth(true)
-    group:SetLayout("List")
-    parent:AddChild(group)
-
+-- Inner content builder — called by BuildMyListingsPanel on initial build
+-- and by RefreshMyListings for in-place updates.
+FillMyListings = function(group)
     local listings = MC.db.char.myListings
     if #listings == 0 then
         local label = AceGUI:Create("Label")
@@ -112,7 +137,7 @@ function MC.UI:BuildMyListingsPanel(parent)
             removeBtn:SetRelativeWidth(0.25)
             removeBtn:SetCallback("OnClick", function()
                 MC:RemoveMyListing(entry.itemID)
-                MC.UI:Refresh()
+                MC.UI:RefreshMyListings()
             end)
             row:AddChild(removeBtn)
             group:AddChild(row)
@@ -176,6 +201,16 @@ function MC.UI:BuildMyListingsPanel(parent)
         hint:SetFullWidth(true)
         group:AddChild(hint)
     end
+end
+
+function MC.UI:BuildMyListingsPanel(parent)
+    local group = AceGUI:Create("InlineGroup")
+    group:SetTitle(string.format("My Listings (%d/5)", #MC.db.char.myListings))
+    group:SetFullWidth(true)
+    group:SetLayout("List")
+    parent:AddChild(group)
+    MC.UI.myListingsGroup = group
+    FillMyListings(group)
 end
 
 ---------------------------------------------------------------------------
@@ -431,7 +466,7 @@ function MC.UI:OpenProfessionPicker()
                             btn:SetText("Listed")
                             btn:SetDisabled(true)
                             listed[id] = true
-                            MC.UI:Refresh()
+                            MC.UI:RefreshMyListings()
                         end
                     end)
                 end

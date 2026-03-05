@@ -62,6 +62,7 @@ function MC.Cache:AddOrUpdate(entry)
         itemID     = entry.itemID,
         itemName   = entry.itemName,
         profName   = entry.profName,
+        note       = entry.note or nil,   -- F1: crafter note (optional)
         itemIcon   = nil,
         receivedAt = now,
         _simulated = entry._simulated or nil,

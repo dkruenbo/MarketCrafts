@@ -138,13 +138,17 @@ end
 ---------------------------------------------------------------------------
 
 -- Add or update a listing (upsert by itemID)
-function MC:AddMyListing(itemID, profName, itemName)
+function MC:AddMyListing(itemID, profName, itemName, note)
+    -- Normalise note: nil or blank → nil; otherwise trim to 60 chars
+    local cleanNote = (note and note:match("^%s*(.-)%s*$") or "")
+    cleanNote = (cleanNote ~= "") and cleanNote:sub(1, 60) or nil
     local listings = self.db.char.myListings
     -- Check for existing entry to update
     for _, entry in ipairs(listings) do
         if entry.itemID == itemID then
             entry.profName = profName
             entry.itemName = itemName
+            entry.note     = cleanNote
             MC.Broadcast:SendListing(entry)
             return true
         end
@@ -153,7 +157,8 @@ function MC:AddMyListing(itemID, profName, itemName)
         MC:Print("You can only list up to 5 recipes.")
         return false
     end
-    table.insert(listings, { itemID = itemID, profName = profName, itemName = itemName })
+    local newEntry = { itemID = itemID, profName = profName, itemName = itemName, note = cleanNote }
+    table.insert(listings, newEntry)
     MC.Broadcast:SendListing(listings[#listings])
     return true
 end

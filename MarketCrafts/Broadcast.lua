@@ -71,8 +71,18 @@ function MC.Broadcast:SendListing(entry)
     if not MC.db.char.settings.optedIn then return end
     local profName = entry.profName:gsub(",", "")
     local itemName = entry.itemName:gsub(",", "")
-    local payload = string.format("%sL:%d,%s,%s",
-        PREFIX, entry.itemID, profName, itemName)
+    local payload
+    -- F1: append note as optional 4th comma field; commas stripped for wire safety.
+    -- Receivers that don't understand the field will safely ignore it via the
+    -- 3-field fallback in ParseListing.
+    if entry.note and entry.note ~= "" then
+        local note = entry.note:gsub(",", "")
+        payload = string.format("%sL:%d,%s,%s,%s",
+            PREFIX, entry.itemID, profName, itemName, note)
+    else
+        payload = string.format("%sL:%d,%s,%s",
+            PREFIX, entry.itemID, profName, itemName)
+    end
     Enqueue(payload)
 end
 

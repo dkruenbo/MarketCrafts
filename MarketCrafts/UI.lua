@@ -144,7 +144,11 @@ FillMyListings = function(group)
             row:SetLayout("Flow")
 
             local lbl = AceGUI:Create("Label")
-            lbl:SetText(string.format("[%s] %s", entry.profName, entry.itemName))
+            -- F1: display crafter note inline when present
+            local noteStr = (entry.note and entry.note ~= "")
+                and (" |cFF888888\226\128\148 " .. entry.note .. "|r")
+                or ""
+            lbl:SetText(string.format("[%s] %s", entry.profName, entry.itemName) .. noteStr)
             lbl:SetRelativeWidth(0.75)
             row:AddChild(lbl)
 
@@ -296,6 +300,9 @@ local function ShowBlocklistMenu(seller)
 end
 
 function MC.UI:RebuildBrowseRows(parent)
+    -- F1: per-row note expansion state — persists across rebuilds within a session
+    MC.UI.expandedNotes = MC.UI.expandedNotes or {}
+
     -- F2: rebuild profession filter chips from the full unfiltered cache
     local profChipsRow = MC.UI.profChipsRow
     if profChipsRow then
@@ -413,7 +420,23 @@ function MC.UI:RebuildBrowseRows(parent)
             row:AddChild(icon)
 
             local nameLbl = AceGUI:Create("Label")
-            nameLbl:SetText(entry.itemName)
+            -- F1: append [+]/[-] indicator and register click when a crafter note is present
+            if entry.note and entry.note ~= "" then
+                local noteKey = entry.seller .. ":" .. entry.itemID
+                local isExpanded = MC.UI.expandedNotes[noteKey]
+                nameLbl:SetText(entry.itemName
+                    .. (isExpanded and " |cFFFF9944[-]|r" or " |cFF44FF44[+]|r"))
+                local nk = noteKey
+                local par = parent
+                nameLbl.frame:SetScript("OnMouseDown", function(_, button)
+                    if button == "LeftButton" then
+                        MC.UI.expandedNotes[nk] = not MC.UI.expandedNotes[nk]
+                        MC.UI:RebuildBrowseRows(par)
+                    end
+                end)
+            else
+                nameLbl:SetText(entry.itemName)
+            end
             nameLbl:SetRelativeWidth(0.25)
             row:AddChild(nameLbl)
 
@@ -467,6 +490,19 @@ function MC.UI:RebuildBrowseRows(parent)
             end)
             row:AddChild(whisperBtn)
             scroll:AddChild(row)
+
+            -- F1: expandable note detail row — shown when user clicks the [+] on the name
+            if entry.note and entry.note ~= ""
+               and MC.UI.expandedNotes[entry.seller .. ":" .. entry.itemID] then
+                local noteRow = AceGUI:Create("SimpleGroup")
+                noteRow:SetFullWidth(true)
+                noteRow:SetLayout("Flow")
+                local noteLbl = AceGUI:Create("Label")
+                noteLbl:SetText("|cFFCCCCCC  \226\134\179 " .. entry.note .. "|r")
+                noteLbl:SetFullWidth(true)
+                noteRow:AddChild(noteLbl)
+                scroll:AddChild(noteRow)
+            end
         end
     end
 
@@ -544,11 +580,11 @@ function MC.UI:OpenProfessionPicker()
     searchBox:SetFullWidth(true)
     picker:AddChild(searchBox)
 
-    -- Scrollable recipe list (350px leaves room for search box + frame chrome)
+    -- Scrollable recipe list (290px leaves room for search box + note field + frame chrome)
     local scroll = AceGUI:Create("ScrollFrame")
     scroll:SetLayout("List")
     scroll:SetFullWidth(true)
-    scroll:SetHeight(350)
+    scroll:SetHeight(290)
     picker:AddChild(scroll)
 
     -- Build a set of already-listed itemIDs for quick lookup
@@ -572,6 +608,7 @@ function MC.UI:OpenProfessionPicker()
 
     local tname = tradeName
     local filterText = ""
+    local noteBox  -- declared early so RebuildRecipeRows can close over it
 
     local function RebuildRecipeRows()
         scroll:ReleaseChildren()
@@ -599,7 +636,9 @@ function MC.UI:OpenProfessionPicker()
                     btn:SetText("Add")
                     local id, rname = recipe.itemID, recipe.name
                     btn:SetCallback("OnClick", function()
-                        local ok = MC:AddMyListing(id, tname, rname)
+                        -- F1: capture note text at click time (noteBox created after this function)
+                        local note = noteBox and noteBox:GetText() or ""
+                        local ok = MC:AddMyListing(id, tname, rname, note)
                         if ok then
                             btn:SetText("Listed")
                             btn:SetDisabled(true)
@@ -627,6 +666,14 @@ function MC.UI:OpenProfessionPicker()
         filterText = widget:GetText() or ""
         RebuildRecipeRows()
     end)
+
+    -- F1: crafter note field — placed below the recipe list so users can type a
+    -- note before clicking Add.  The noteBox upvalue is now valid for btn callbacks.
+    noteBox = AceGUI:Create("EditBox")
+    noteBox:SetLabel("Crafter note (optional, 60 chars):")
+    noteBox:SetFullWidth(true)
+    noteBox:SetMaxLetters(60)
+    picker:AddChild(noteBox)
 
     RebuildRecipeRows()
 end

@@ -5,9 +5,14 @@ local MC = LibStub("AceAddon-3.0"):NewAddon("MarketCrafts", "AceConsole-3.0", "A
 NS.MC = MC
 
 ---------------------------------------------------------------------------
--- SavedVariables defaults (character-scoped)
+-- SavedVariables defaults (character-scoped + account-scoped)
 ---------------------------------------------------------------------------
 local DB_DEFAULTS = {
+    global = {
+        -- F5: account-scoped alt listings — shared across all characters on this
+        -- account/install. Keyed by "RealmName-CharName".
+        altListings = {},
+    },
     char = {
         myListings  = {},   -- up to 5 entries: { itemID, profName, itemName }
         blocklist   = {},   -- { ["PlayerName"] = true }
@@ -102,6 +107,9 @@ function MC:HandleSlashCommand(input)
             count = count + 1
         end
         if count == 0 then MC:Print("No favourite sellers.") end
+    elseif cmd == "importalt" then
+        -- F5: snapshot current char's listings into the account-scoped alt store
+        MC:ImportAlt()
     elseif cmd == "sim" then
         MC.MockData:HandleSimCommand(arg)
     elseif cmd == "help" then
@@ -111,6 +119,7 @@ function MC:HandleSlashCommand(input)
         MC:Print("/mc ignore <Player> — block player's listings")
         MC:Print("/mc unignore <Player> — unblock player")
         MC:Print("/mc list — show your active listings")
+        MC:Print("/mc importalt — save current char's listings as alt profile (all chars broadcast them)")
         MC:Print("/mc debug — toggle debug mode")
         MC:Print("/mc sim <N> — inject N fake sellers (debug mode)")
         MC:Print("/mc sim clear — remove simulated data")
@@ -192,6 +201,39 @@ end
 
 function MC:GetMyListings()
     return self.db.char.myListings
+end
+
+---------------------------------------------------------------------------
+-- F5 — Alt listing import/export
+---------------------------------------------------------------------------
+
+-- Snapshot the current character's listings into the account-scoped alt store.
+-- The snapshot is keyed by "Realm-CharName" and can be read by any character
+-- on the same account/installation so they can broadcast it during keep-alives.
+function MC:ImportAlt()
+    local realm    = GetRealmName() or "Unknown"
+    local charName = UnitName("player") or "Unknown"
+    local key      = realm .. "-" .. charName
+    local listings = self.db.char.myListings
+    if #listings == 0 then
+        self:Print("Nothing to import — your My Listings panel is empty.")
+        return
+    end
+    -- Deep-copy; omit runtime/volatile fields (cdSeconds becomes stale quickly)
+    local copy = {}
+    for _, entry in ipairs(listings) do
+        table.insert(copy, {
+            itemID   = entry.itemID,
+            profName = entry.profName,
+            itemName = entry.itemName,
+            note     = entry.note,
+        })
+    end
+    self.db.global.altListings[key] = copy
+    self:Print(string.format(
+        "Saved %d listing(s) as alt profile '%s'. Other characters on this account will now broadcast them.",
+        #copy, charName))
+    MC.UI:RefreshMyListings()
 end
 
 -- Printf convenience (same as GuildCrafts)

@@ -117,25 +117,23 @@ function Channel:StartWalk(fromIndex)
     if retryTimer then MC:CancelTimer(retryTimer); retryTimer = nil end
 
     -- Before walking, check if we are already in an MCMarket channel
-    -- (e.g. after /reload). If so, go straight to ACTIVE without leaving/rejoining.
+    -- (e.g. after /reload). GetChannelName(name) returns slot > 0 if joined.
     if not fromIndex then
-        for ci = 1, MAX_WOW_CHANNELS do
-            local _, cName = GetChannelName(ci)
-            if cName then
-                local idx = ChannelToIndex(cName)
-                if idx then
-                    state = "ACTIVE"
-                    activeIndex = idx
-                    walkIndex = nil
-                    Channel.wowChannelIndex = ci
-                    HideChannelFromAllFrames(cName)
-                    MC.Broadcast:StartKeepAlive()
-                    MC.UI:UpdateStatus()
-                    if MC.debugMode then
-                        print("MCR: already in", cName, "slot", ci, "- skipping walk")
-                    end
-                    return
+        for i = 1, 10 do
+            local name = ChannelName(i)
+            local slot = GetChannelName(name)
+            if slot and slot > 0 then
+                state = "ACTIVE"
+                activeIndex = i
+                walkIndex = nil
+                Channel.wowChannelIndex = slot
+                HideChannelFromAllFrames(name)
+                MC.Broadcast:StartKeepAlive()
+                MC.UI:UpdateStatus()
+                if MC.debugMode then
+                    print("MCR: already in", name, "slot", slot, "- skipping walk")
                 end
+                return
             end
         end
     end

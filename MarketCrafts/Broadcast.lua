@@ -113,16 +113,16 @@ function MC.Broadcast:SendRequest(entry)
     local itemName = entry.itemName:gsub(",", "")
     if entry.note and entry.note ~= "" then
         local note = entry.note:gsub(",", "")
-        Enqueue(string.format("%sQ:%d,%s,%s", PREFIX, entry.itemID, itemName, note))
+        Enqueue(string.format("%sQ:%s,%s", PREFIX, itemName, note))
     else
-        Enqueue(string.format("%sQ:%d,%s", PREFIX, entry.itemID, itemName))
+        Enqueue(string.format("%sQ:%s", PREFIX, itemName))
     end
 end
 
 -- F7: Broadcast removal of a buyer request
-function MC.Broadcast:SendRequestRemove(itemID)
+function MC.Broadcast:SendRequestRemove(itemName)
     if not MC.db.char.settings.optedIn then return end
-    Enqueue(string.format("%sQR:%d", PREFIX, itemID))
+    Enqueue(string.format("%sQR:%s", PREFIX, itemName:gsub(",", "")))
 end
 
 function MC.Broadcast:SendAllListings()
@@ -143,6 +143,10 @@ function MC.Broadcast:SendAllListings()
                 MC.Broadcast:SendListing(entry)
             end
         end
+    end
+    -- F7: re-broadcast own buyer requests so they survive TTL expiry on receivers
+    for _, entry in ipairs(MC.db.char.myRequests) do
+        MC.Broadcast:SendRequest(entry)
     end
 end
 

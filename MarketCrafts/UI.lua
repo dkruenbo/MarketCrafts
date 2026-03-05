@@ -9,7 +9,10 @@ MC.UI = {}
 -- State
 ---------------------------------------------------------------------------
 local mainFrame = nil
-local refreshTimer = nil   -- debounce timer for Refresh()
+local refreshTimer = nil          -- debounce timer for full Refresh()
+local myListingsTimer = nil       -- debounce timer for RefreshMyListings()
+local browseTimer = nil           -- debounce timer for RefreshBrowse()
+local requestsTimer = nil         -- debounce timer for RefreshRequests()
 local FillMyListings       -- forward declaration; assigned before BuildMyListingsPanel
 local MCBlocklistMenuFrame -- F11: context menu frame (created once, reused)
 
@@ -24,7 +27,7 @@ function MC.UI:Toggle()
     end
 end
 
-function MC.UI:Open()
+function MC.UI:Open(initialTab)
     if mainFrame then mainFrame:Release(); mainFrame = nil end
 
     mainFrame = AceGUI:Create("Frame")
@@ -100,7 +103,7 @@ function MC.UI:Open()
     tabs:AddChild(scrollContainer)
     mainFrame:AddChild(tabs)
     MC.UI.mainTabs = tabs
-    tabs:SelectTab("listings")
+    tabs:SelectTab(initialTab or "listings")
 end
 
 -- Update only the status bar text of an already-open window.
@@ -169,9 +172,9 @@ end
 function MC.UI:RefreshMyListings()
     if not mainFrame then return end
     if not MC.UI.myListingsGroup then MC.UI:Refresh(); return end
-    if refreshTimer then MC:CancelTimer(refreshTimer) end
-    refreshTimer = MC:ScheduleTimer(function()
-        refreshTimer = nil
+    if myListingsTimer then MC:CancelTimer(myListingsTimer) end
+    myListingsTimer = MC:ScheduleTimer(function()
+        myListingsTimer = nil
         if not mainFrame or not MC.UI.myListingsGroup then return end
         local g = MC.UI.myListingsGroup
         g:SetTitle(string.format("My Listings (%d/5)", #MC.db.char.myListings))
@@ -184,9 +187,9 @@ end
 function MC.UI:RefreshBrowse()
     if not mainFrame then return end
     if not MC.UI.browseGroup then MC.UI:Refresh(); return end
-    if refreshTimer then MC:CancelTimer(refreshTimer) end
-    refreshTimer = MC:ScheduleTimer(function()
-        refreshTimer = nil
+    if browseTimer then MC:CancelTimer(browseTimer) end
+    browseTimer = MC:ScheduleTimer(function()
+        browseTimer = nil
         if mainFrame and MC.UI.browseGroup then
             MC.UI:RebuildBrowseRows(MC.UI.browseGroup)
         end
@@ -197,9 +200,9 @@ end
 function MC.UI:RefreshRequests()
     if not mainFrame then return end
     if not MC.UI.requestsGroup then return end   -- tab not yet visible
-    if refreshTimer then MC:CancelTimer(refreshTimer) end
-    refreshTimer = MC:ScheduleTimer(function()
-        refreshTimer = nil
+    if requestsTimer then MC:CancelTimer(requestsTimer) end
+    requestsTimer = MC:ScheduleTimer(function()
+        requestsTimer = nil
         if mainFrame and MC.UI.requestsGroup then
             MC.UI:RebuildRequestRows(MC.UI.requestsGroup)
         end
@@ -869,7 +872,7 @@ function MC.UI:BuildRequestsPanel(parent)
     parent:AddChild(searchBox)
     MC.UI.requestSearchFilter = ""
     searchBox:SetCallback("OnTextChanged", function(widget)
-        MC.UI.requestSearchFilter = widget:GetText() or ""
+        MC.UI.requestSearchFilter = (widget:GetText() or ""):lower()
         if MC.UI.requestsGroup then
             MC.UI:RebuildRequestRows(MC.UI.requestsGroup)
         end
@@ -904,9 +907,9 @@ function MC.UI:FillMyRequests(group)
             local removeBtn = AceGUI:Create("Button")
             removeBtn:SetText("Remove")
             removeBtn:SetRelativeWidth(0.25)
-            local capturedID = entry.itemID
+            local capturedName = entry.itemName
             removeBtn:SetCallback("OnClick", function()
-                MC:RemoveMyRequest(capturedID)
+                MC:RemoveMyRequest(capturedName)
                 if MC.UI.myRequestsGroup then
                     MC.UI.myRequestsGroup:SetTitle(
                         string.format("My Requests (%d/3)", #MC.db.char.myRequests))
@@ -970,18 +973,11 @@ function MC.UI:RebuildRequestRows(parent)
             row:SetFullWidth(true)
             row:SetLayout("Flow")
 
-            -- Icon
+            -- Icon (requests are name-based; no item tooltip)
             local icon = AceGUI:Create("Icon")
-            icon:SetImage(entry.itemIcon or "Interface\\Icons\\INV_Misc_QuestionMark")
+            icon:SetImage("Interface\\Icons\\INV_Misc_QuestionMark")
             icon:SetImageSize(16, 16)
             icon:SetWidth(20)
-            local itemID = entry.itemID
-            icon.frame:SetScript("OnEnter", function(self)
-                GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-                GameTooltip:SetHyperlink("item:" .. itemID)
-                GameTooltip:Show()
-            end)
-            icon.frame:SetScript("OnLeave", function() GameTooltip:Hide() end)
             row:AddChild(icon)
 
             local itemLbl = AceGUI:Create("Label")
@@ -1083,7 +1079,7 @@ function MC.UI:OpenRequestPicker()
         local note = noteBox:GetText() or ""
         -- Use itemID = 0 as a sentinel for unresolved requests (name-only).
         -- Receivers display itemName; icon resolution is skipped (no valid itemID).
-        local ok = MC:AddMyRequest(0, rawName, note)
+        local ok = MC:AddMyRequest(rawName, note)
         if ok then
             picker:Release()
             MC.UI.requestPickerFrame = nil

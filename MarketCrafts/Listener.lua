@@ -59,21 +59,24 @@ local function ParseRemove(msg, sender)
 end
 
 -- F7: Parse a buyer request.
--- Wire format: [MCR]Q:itemID,itemName[,note]
+-- Wire format: [MCR]Q:itemName[,note]   (itemName is comma-stripped on send)
+-- Backward compat: old format [MCR]Q:itemID,itemName[,note] is also accepted.
 local function ParseRequest(msg, sender)
     local body = string.sub(msg, #PREFIX_Q + 1)
-    -- 3-field: itemID, itemName (comma-free), note
-    local itemIDStr, itemName, note = body:match("^(%d+),([^,]+),(.+)$")
-    if not itemIDStr then
-        -- 2-field: itemID, itemName (may contain commas — greedy)
-        itemIDStr, itemName = body:match("^(%d+),(.+)$")
+    if not body or body == "" then return nil end
+    -- Backward compat: if body starts with digits then comma, strip the
+    -- leading itemID field (old clients sent itemID=0 which was non-functional).
+    local afterID = body:match("^%d+,(.+)$")
+    if afterID then body = afterID end
+    -- 2-field: itemName (comma-free), note
+    local itemName, note = body:match("^([^,]+),(.+)$")
+    if not itemName then
+        -- 1-field: itemName only
+        itemName = body
         note = nil
     end
-    if not itemIDStr then return nil end
-    local itemID = tonumber(itemIDStr)
-    if not itemID or itemID <= 0 then return nil end
+    if not itemName or itemName == "" then return nil end
     return {
-        itemID   = itemID,
         itemName = itemName,
         note     = (note and note ~= "") and note or nil,
         buyer    = sender,
@@ -81,12 +84,13 @@ local function ParseRequest(msg, sender)
 end
 
 -- F7: Parse a buyer request removal.
--- Wire format: [MCR]QR:itemID
+-- Wire format: [MCR]QR:itemName
 local function ParseRequestRemove(msg, sender)
     local body = string.sub(msg, #PREFIX_QR + 1)
-    local itemID = tonumber(body)
-    if not itemID or itemID <= 0 then return nil end
-    return { itemID = itemID, buyer = sender }
+    if not body or body == "" then return nil end
+    -- Ignore legacy numeric-only removals (pre-fix clients sent itemID=0)
+    if tonumber(body) then return nil end
+    return { itemName = body, buyer = sender }
 end
 
 ---------------------------------------------------------------------------
@@ -130,7 +134,7 @@ function MC.Listener:OnChatMsgChannel(msg, sender, _, _, _, _, _, _, channelName
         local ok, err = pcall(function()
             local data = ParseRequestRemove(msg, sender)
             if data then
-                MC.Requests:Remove(data.buyer, data.itemID)
+                MC.Requests:Remove(data.buyer, data.itemName)
             end
         end)
         if not ok and MC.debugMode then

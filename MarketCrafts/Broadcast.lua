@@ -100,11 +100,26 @@ function MC.Broadcast:SendListing(entry)
             PREFIX, entry.itemID, profName, itemName)
     end
     Enqueue(payload)
+
+    -- Mirror into local cache so own listings appear in Browse immediately.
+    -- Listener skips own channel echoes, so we feed the cache directly here.
+    MC.Cache:AddOrUpdate({
+        itemID      = entry.itemID,
+        profName    = entry.profName,
+        itemName    = entry.itemName,
+        note        = entry.note,
+        cdSeconds   = entry.cdSeconds,
+        cdUpdatedAt = entry.cdUpdatedAt,
+        seller      = UnitName("player"),
+        receivedAt  = time(),
+    })
 end
 
 function MC.Broadcast:SendRemove(itemID)
     if not MC.db.char.settings.optedIn then return end
     Enqueue(string.format("%sR:%d", PREFIX, itemID))
+    -- Mirror removal into local cache immediately.
+    MC.Cache:Remove(UnitName("player"), itemID)
 end
 
 -- F7: Broadcast a buyer request (WTB)

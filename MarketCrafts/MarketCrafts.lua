@@ -68,13 +68,7 @@ function MC:HandleSlashCommand(input)
     if cmd == "" then
         MC.UI:Toggle()
     elseif cmd == "optin" then
-        MC.db.char.settings.optedIn = true
-        MC:Print("You are now opted in. Your listings will be broadcast to other players.")
-        if MC.Channel:IsActive() then
-            MC.Broadcast:SendAllListings()
-        else
-            MC:Print("(Waiting for channel — listings will broadcast once connected.)")
-        end
+        MC:OptIn()
     elseif cmd == "optout" then
         MC.db.char.settings.optedIn = false
         MC.Broadcast:StopKeepAlive()
@@ -134,6 +128,16 @@ function MC:HandleSlashCommand(input)
         MC:Print("/mc unignore <Player> — unblock (or right-click seller in Browse)")
     else
         MC:Print("Unknown command. Type /mc help.")
+    end
+end
+
+function MC:OptIn()
+    self.db.char.settings.optedIn = true
+    self:Print("You are now opted in. Your listings will be broadcast to other players.")
+    if MC.Channel:IsActive() then
+        MC.Broadcast:SendAllListings()
+    else
+        self:Print("(Waiting for channel — listings will broadcast once connected.)")
     end
 end
 

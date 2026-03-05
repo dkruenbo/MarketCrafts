@@ -87,6 +87,27 @@ function MC.UI:FormatAge(receivedAt)
     end
 end
 
+-- F6: Format a cooldown value applying client-side decay since the broadcast.
+-- Returns a display string plus r, g, b colour components.
+function MC.UI:FormatCooldown(cdSeconds, receivedAt)
+    local remaining = math.max(0, cdSeconds - (time() - receivedAt))
+    if remaining == 0 then
+        return "CD: Ready", 0.2, 1.0, 0.2   -- green
+    end
+    local days  = math.floor(remaining / 86400)
+    local hours = math.floor((remaining % 86400) / 3600)
+    local mins  = math.floor((remaining % 3600) / 60)
+    local text
+    if days > 0 then
+        text = string.format("CD: %dd %dh", days, hours)
+    elseif hours > 0 then
+        text = string.format("CD: %dh %dm", hours, mins)
+    else
+        text = string.format("CD: %dm", math.max(1, mins))
+    end
+    return text, 0.6, 0.6, 0.6   -- grey
+end
+
 function MC.UI:Refresh()
     if not mainFrame then return end
     -- Debounce: coalesce rapid-fire refreshes (e.g. during sim injection)
@@ -419,14 +440,18 @@ function MC.UI:RebuildBrowseRows(parent)
             end)
             row:AddChild(icon)
 
+            -- F1/F6: per-entry flags shared between nameLbl and the detail row below
+            local hasNote   = entry.note and entry.note ~= ""
+            local hasCd     = entry.cdSeconds ~= nil
+            local detailKey = entry.seller .. ":" .. entry.itemID
+
             local nameLbl = AceGUI:Create("Label")
-            -- F1: append [+]/[-] indicator and register click when a crafter note is present
-            if entry.note and entry.note ~= "" then
-                local noteKey = entry.seller .. ":" .. entry.itemID
-                local isExpanded = MC.UI.expandedNotes[noteKey]
+            -- F1/F6: show [+]/[-] indicator when a note OR a cooldown is present
+            if hasNote or hasCd then
+                local isExpanded = MC.UI.expandedNotes[detailKey]
                 nameLbl:SetText(entry.itemName
                     .. (isExpanded and " |cFFFF9944[-]|r" or " |cFF44FF44[+]|r"))
-                local nk = noteKey
+                local nk  = detailKey
                 local par = parent
                 nameLbl.frame:SetScript("OnMouseDown", function(_, button)
                     if button == "LeftButton" then
@@ -491,17 +516,27 @@ function MC.UI:RebuildBrowseRows(parent)
             row:AddChild(whisperBtn)
             scroll:AddChild(row)
 
-            -- F1: expandable note detail row — shown when user clicks the [+] on the name
-            if entry.note and entry.note ~= ""
-               and MC.UI.expandedNotes[entry.seller .. ":" .. entry.itemID] then
-                local noteRow = AceGUI:Create("SimpleGroup")
-                noteRow:SetFullWidth(true)
-                noteRow:SetLayout("Flow")
-                local noteLbl = AceGUI:Create("Label")
-                noteLbl:SetText("|cFFCCCCCC  \226\134\179 " .. entry.note .. "|r")
-                noteLbl:SetFullWidth(true)
-                noteRow:AddChild(noteLbl)
-                scroll:AddChild(noteRow)
+            -- F1/F6: expandable detail row — shows note and/or cooldown when [+] clicked
+            if (hasNote or hasCd) and MC.UI.expandedNotes[detailKey] then
+                local detailRow = AceGUI:Create("SimpleGroup")
+                detailRow:SetFullWidth(true)
+                detailRow:SetLayout("List")
+                if hasNote then
+                    local noteLbl = AceGUI:Create("Label")
+                    noteLbl:SetText("|cFFCCCCCC  \226\134\179 " .. entry.note .. "|r")
+                    noteLbl:SetFullWidth(true)
+                    detailRow:AddChild(noteLbl)
+                end
+                if hasCd then
+                    local cdText, cr, cg, cb = MC.UI:FormatCooldown(entry.cdSeconds, entry.receivedAt)
+                    local cdHex = string.format("%02X%02X%02X",
+                        math.floor(cr * 255), math.floor(cg * 255), math.floor(cb * 255))
+                    local cdLbl = AceGUI:Create("Label")
+                    cdLbl:SetText("  |cFF" .. cdHex .. cdText .. "|r")
+                    cdLbl:SetFullWidth(true)
+                    detailRow:AddChild(cdLbl)
+                end
+                scroll:AddChild(detailRow)
             end
         end
     end
@@ -601,7 +636,9 @@ function MC.UI:OpenProfessionPicker()
             local link = GetTradeSkillItemLink(i)
             local itemID = link and tonumber(link:match("item:(%d+)"))
             if itemID then
-                table.insert(recipes, { itemID = itemID, name = name })
+                -- F6: capture current cooldown for time-gated recipes (nil = no cooldown)
+                local cd = GetTradeSkillCooldown and GetTradeSkillCooldown(i) or nil
+                table.insert(recipes, { itemID = itemID, name = name, cdSeconds = cd })
             end
         end
     end
@@ -634,11 +671,12 @@ function MC.UI:OpenProfessionPicker()
                     btn:SetDisabled(true)
                 else
                     btn:SetText("Add")
-                    local id, rname = recipe.itemID, recipe.name
+                    local id, rname, rcd = recipe.itemID, recipe.name, recipe.cdSeconds
                     btn:SetCallback("OnClick", function()
                         -- F1: capture note text at click time (noteBox created after this function)
                         local note = noteBox and noteBox:GetText() or ""
-                        local ok = MC:AddMyListing(id, tname, rname, note)
+                        -- F6: pass cooldown snapshot so it's stored with the listing
+                        local ok = MC:AddMyListing(id, tname, rname, note, rcd)
                         if ok then
                             btn:SetText("Listed")
                             btn:SetDisabled(true)

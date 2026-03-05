@@ -17,26 +17,35 @@ local PREFIX_R = "[MCR]R:"
 local function ParseListing(msg, sender)
     -- Strip prefix
     local body = string.sub(msg, #PREFIX_L + 1)
-    -- F1: Try 4-field first: itemID, profName, itemName (comma-free), note (greedy remainder).
-    -- Broadcasters strip commas from itemName before sending, so [^,]+ is safe for
-    -- any message produced by this addon. The fallback 3-field pattern handles old
-    -- clients or any edge-case item name that still contains commas.
-    local itemIDStr, profName, itemName, note =
-        body:match("^(%d+),([^,]+),([^,]+),(.+)$")
-    if not itemIDStr then
-        -- Fallback: 3-field format (no note, or itemName still contains commas)
-        itemIDStr, profName, itemName = body:match("^(%d+),([^,]+),(.+)$")
-        note = nil
+    -- F6: Try 5-field first: itemID, profName, itemName (comma-free), note (possibly empty), cdSeconds (digits).
+    -- F1: If that fails, try 4-field: itemID, profName, itemName (comma-free), note (non-empty).
+    -- Fallback: 3-field (pre-F1 clients, or itemName that still contains commas).
+    local itemIDStr, profName, itemName, note, cdStr =
+        body:match("^(%d+),([^,]+),([^,]+),([^,]*),(%d+)$")
+    local cdSeconds = nil
+    if itemIDStr then
+        -- 5-field match succeeded; note may be empty string → normalise to nil
+        cdSeconds = tonumber(cdStr)
+    else
+        -- Try 4-field
+        itemIDStr, profName, itemName, note =
+            body:match("^(%d+),([^,]+),([^,]+),(.+)$")
+        if not itemIDStr then
+            -- Fallback: 3-field format (no note, or itemName still contains commas)
+            itemIDStr, profName, itemName = body:match("^(%d+),([^,]+),(.+)$")
+            note = nil
+        end
     end
     if not itemIDStr then return nil end
     local itemID = tonumber(itemIDStr)
     if not itemID or itemID <= 0 then return nil end
     return {
-        itemID   = itemID,
-        profName = profName,
-        itemName = itemName,
-        note     = (note and note ~= "") and note or nil,
-        seller   = sender,
+        itemID    = itemID,
+        profName  = profName,
+        itemName  = itemName,
+        note      = (note and note ~= "") and note or nil,
+        cdSeconds = cdSeconds,   -- F6: nil means no cooldown field sent
+        seller    = sender,
     }
 end
 

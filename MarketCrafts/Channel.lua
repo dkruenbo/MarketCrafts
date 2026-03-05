@@ -43,6 +43,7 @@ local function CancelStepTimer()
 end
 
 local function HideChannelFromAllFrames(name)
+    if not ChatFrame_RemoveChannel then return end
     for i = 1, NUM_CHAT_WINDOWS do
         local frame = _G["ChatFrame" .. i]
         if frame then ChatFrame_RemoveChannel(frame, name) end
@@ -95,6 +96,7 @@ local function TryJoinAt(index)
     if customCount >= 10 then
         MC:Print("MarketCrafts: Cannot join market channel — you are at the 10 custom channel limit.")
         state = "UNAVAILABLE"
+        retryTimer = MC:ScheduleTimer(function() Channel:StartWalk() end, 300)
         return
     end
 

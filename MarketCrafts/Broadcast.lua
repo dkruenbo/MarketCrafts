@@ -66,8 +66,10 @@ end
 ---------------------------------------------------------------------------
 function MC.Broadcast:SendListing(entry)
     if not MC.db.char.settings.optedIn then return end
+    local profName = entry.profName:gsub(",", "")
+    local itemName = entry.itemName:gsub(",", "")
     local payload = string.format("%sL:%d,%s,%s",
-        PREFIX, entry.itemID, entry.profName, entry.itemName)
+        PREFIX, entry.itemID, profName, itemName)
     Enqueue(payload)
 end
 

@@ -63,7 +63,9 @@ function MC.Listener:OnChatMsgChannel(msg, sender, _, _, _, _, _, _, channelName
                 MC.Cache:AddOrUpdate(entry)
             end
         end)
-        -- Silent on error: BugGrabber will capture it
+        if not ok and MC.debugMode then
+            print("MCR ERROR (L):", err, "| msg:", msg, "| sender:", sender)
+        end
     elseif string.sub(msg, 1, #PREFIX_R) == PREFIX_R then
         local ok, err = pcall(function()
             local data = ParseRemove(msg, sender)
@@ -71,6 +73,9 @@ function MC.Listener:OnChatMsgChannel(msg, sender, _, _, _, _, _, _, channelName
                 MC.Cache:Remove(data.seller, data.itemID)
             end
         end)
+        if not ok and MC.debugMode then
+            print("MCR ERROR (R):", err, "| msg:", msg, "| sender:", sender)
+        end
     end
 end
 

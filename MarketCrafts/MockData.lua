@@ -154,9 +154,11 @@ function MC.MockData:SimGenerate(count)
         injected = injected + 1
     end
 
-    MC:Printf("Simulated %d sellers with %d total listings.", injected, totalListings)
-    MC:Debug("Mock data injected via Cache:AddOrUpdate — all validation ran.")
-    MC:Debug("Current cache size:", MC.Cache:GetCacheSize())
+    if MC.debugMode then
+        MC:Printf("Simulated %d sellers with %d total listings.", injected, totalListings)
+        MC:Debug("Mock data injected via Cache:AddOrUpdate — all validation ran.")
+        MC:Debug("Current cache size:", MC.Cache:GetCacheSize())
+    end
 end
 
 --- Remove all simulated entries from cache.

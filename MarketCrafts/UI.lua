@@ -86,7 +86,7 @@ end
 ---------------------------------------------------------------------------
 function MC.UI:BuildMyListingsPanel(parent)
     local group = AceGUI:Create("InlineGroup")
-    group:SetTitle("My Listings")
+    group:SetTitle(string.format("My Listings (%d/5)", #MC.db.char.myListings))
     group:SetFullWidth(true)
     group:SetLayout("List")
     parent:AddChild(group)
@@ -146,9 +146,17 @@ function MC.UI:BuildMyListingsPanel(parent)
     if remaining > 0 then
         refreshBtn:SetText(string.format("Refresh (%ds)", math.ceil(remaining)))
         refreshBtn:SetDisabled(true)
-        -- Re-enable when cooldown expires
+        -- Re-enable when cooldown expires — target the button directly to avoid a full rebuild
         MC:ScheduleTimer(function()
-            if mainFrame then MC.UI:Refresh() end
+            if refreshBtn and refreshBtn.frame and refreshBtn.frame:IsShown() then
+                refreshBtn:SetDisabled(false)
+                refreshBtn:SetText("Refresh My Listings")
+                refreshBtn:SetCallback("OnClick", function()
+                    MC.db.char.settings.lastBroadcast = time()
+                    MC.Broadcast:SendAllListings()
+                    MC.UI:Refresh()
+                end)
+            end
         end, remaining)
     else
         refreshBtn:SetText("Refresh My Listings")

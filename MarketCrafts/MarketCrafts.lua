@@ -61,9 +61,15 @@ function MC:HandleSlashCommand(input)
     elseif cmd == "optin" then
         MC.db.char.settings.optedIn = true
         MC:Print("You are now opted in. Your listings will be broadcast to other players.")
-        MC.Broadcast:SendAllListings()
+        if MC.Channel:IsActive() then
+            MC.Broadcast:SendAllListings()
+        else
+            MC:Print("(Waiting for channel — listings will broadcast once connected.)")
+        end
     elseif cmd == "optout" then
         MC.db.char.settings.optedIn = false
+        MC.Broadcast:StopKeepAlive()
+        MC.Broadcast:ClearQueue()
         MC:Print("You are now opted out. Your listings will no longer be broadcast.")
     elseif cmd == "ignore" and arg ~= "" then
         MC.Cache:Ignore(arg)
@@ -76,6 +82,9 @@ function MC:HandleSlashCommand(input)
     elseif cmd == "debug" then
         MC.debugMode = not MC.debugMode
         MC:Print("Debug mode: " .. (MC.debugMode and "ON" or "OFF"))
+        if MC.debugMode then
+            MC:Print("Cache size: " .. MC.Cache:GetCacheSize() .. " listing(s)")
+        end
     elseif cmd == "sim" then
         MC.MockData:HandleSimCommand(arg)
     elseif cmd == "help" then

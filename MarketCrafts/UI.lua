@@ -237,6 +237,28 @@ FillMyListings = function(group)
         end)
         bannerRow:AddChild(optInBtn)
         group:AddChild(bannerRow)
+    else
+        -- Opted-in status bar with opt-out button
+        local statusRow = AceGUI:Create("SimpleGroup")
+        statusRow:SetFullWidth(true)
+        statusRow:SetLayout("Flow")
+
+        local statusLabel = AceGUI:Create("Label")
+        statusLabel:SetText("|cFF00FF00Broadcasting active. Other players can see your listings.|r")
+        statusLabel:SetRelativeWidth(0.72)
+        statusRow:AddChild(statusLabel)
+
+        local optOutBtn = AceGUI:Create("Button")
+        optOutBtn:SetText("Opt Out")
+        optOutBtn:SetRelativeWidth(0.28)
+        optOutBtn:SetCallback("OnClick", function()
+            MC.db.char.settings.optedIn = false
+            MC.Broadcast:StopKeepAlive()
+            MC:Print("You are now opted out. Your listings will no longer be broadcast.")
+            MC.UI:RefreshMyListings()
+        end)
+        statusRow:AddChild(optOutBtn)
+        group:AddChild(statusRow)
     end
 
     if #listings == 0 then

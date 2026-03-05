@@ -29,9 +29,9 @@ function MC.UI:Open()
 
     mainFrame = AceGUI:Create("Frame")
     mainFrame:SetTitle("MarketCrafts")
-    mainFrame:SetLayout("Flow")
+    mainFrame:SetLayout("Fill")
     mainFrame:SetWidth(660)
-    mainFrame:SetHeight(540)
+    mainFrame:SetHeight(560)
 
     -- Register with UISpecialFrames so the Escape key closes this window.
     -- AceGUI Frame does not do this itself. Frame_OnClose fires on :Hide(), so
@@ -52,16 +52,55 @@ function MC.UI:Open()
 
     mainFrame:SetCallback("OnClose", function(widget)
         -- Clear all cached widget references so stale refs don't survive a re-open
-        MC.UI.browseScrollFrame = nil
-        MC.UI.browseGroup       = nil
-        MC.UI.myListingsGroup   = nil
-        MC.UI.profChipsRow      = nil
+        MC.UI.browseScrollFrame  = nil
+        MC.UI.browseGroup        = nil
+        MC.UI.myListingsGroup    = nil
+        MC.UI.profChipsRow       = nil
+        MC.UI.requestsGroup      = nil   -- F7
+        MC.UI.requestScrollFrame = nil   -- F7
+        MC.UI.myRequestsGroup    = nil   -- F7
         AceGUI:Release(widget)
         mainFrame = nil
     end)
 
-    MC.UI:BuildMyListingsPanel(mainFrame)
-    MC.UI:BuildBrowsePanel(mainFrame)
+    -- F7: tab layout — My Listings | Browse | Requests
+    local tabs = AceGUI:Create("TabGroup")
+    tabs:SetLayout("Fill")
+    tabs:SetFullWidth(true)
+    tabs:SetFullHeight(true)
+    tabs:SetTabs({
+        { text = "My Listings", value = "listings" },
+        { text = "Browse",      value = "browse"   },
+        { text = "Requests",    value = "requests"  },
+    })
+
+    local scrollContainer = AceGUI:Create("ScrollFrame")
+    scrollContainer:SetLayout("List")
+    scrollContainer:SetFullWidth(true)
+
+    tabs:SetCallback("OnGroupSelected", function(widget, _, tab)
+        scrollContainer:ReleaseChildren()
+        -- Clear panel-specific cached references so rebuilds start fresh
+        MC.UI.browseScrollFrame  = nil
+        MC.UI.browseGroup        = nil
+        MC.UI.myListingsGroup    = nil
+        MC.UI.profChipsRow       = nil
+        MC.UI.requestsGroup      = nil
+        MC.UI.requestScrollFrame = nil
+        MC.UI.myRequestsGroup    = nil
+        if tab == "listings" then
+            MC.UI:BuildMyListingsPanel(scrollContainer)
+        elseif tab == "browse" then
+            MC.UI:BuildBrowsePanel(scrollContainer)
+        elseif tab == "requests" then
+            MC.UI:BuildRequestsPanel(scrollContainer)
+        end
+    end)
+
+    tabs:AddChild(scrollContainer)
+    mainFrame:AddChild(tabs)
+    MC.UI.mainTabs = tabs
+    tabs:SelectTab("listings")
 end
 
 -- Update only the status bar text of an already-open window.
@@ -72,6 +111,13 @@ function MC.UI:UpdateStatus()
         mainFrame:SetStatusText("Channel: " .. (MC.Channel:GetActiveChannelName() or "unknown"))
     else
         mainFrame:SetStatusText("Market unavailable — channel not joined")
+    end
+end
+
+-- F7: programmatically switch to the Requests tab (used by /mc request)
+function MC.UI:ShowRequestsTab()
+    if MC.UI.mainTabs then
+        MC.UI.mainTabs:SelectTab("requests")
     end
 end
 
@@ -143,6 +189,19 @@ function MC.UI:RefreshBrowse()
         refreshTimer = nil
         if mainFrame and MC.UI.browseGroup then
             MC.UI:RebuildBrowseRows(MC.UI.browseGroup)
+        end
+    end, 0.1)
+end
+
+-- F7: partial refresh for the Requests tab
+function MC.UI:RefreshRequests()
+    if not mainFrame then return end
+    if not MC.UI.requestsGroup then return end   -- tab not yet visible
+    if refreshTimer then MC:CancelTimer(refreshTimer) end
+    refreshTimer = MC:ScheduleTimer(function()
+        refreshTimer = nil
+        if mainFrame and MC.UI.requestsGroup then
+            MC.UI:RebuildRequestRows(MC.UI.requestsGroup)
         end
     end, 0.1)
 end
@@ -787,4 +846,254 @@ function MC.UI:OpenProfessionPicker()
     picker:AddChild(noteBox)
 
     RebuildRecipeRows()
+end
+---------------------------------------------------------------------------
+-- F7 — Requests panel (WTB board)
+---------------------------------------------------------------------------
+
+-- Build the initial Requests panel structure (search bar + My Requests + board).
+function MC.UI:BuildRequestsPanel(parent)
+    -- My Requests inline group
+    local myGroup = AceGUI:Create("InlineGroup")
+    myGroup:SetTitle(string.format("My Requests (%d/3)", #MC.db.char.myRequests))
+    myGroup:SetFullWidth(true)
+    myGroup:SetLayout("List")
+    parent:AddChild(myGroup)
+    MC.UI.myRequestsGroup = myGroup
+    MC.UI:FillMyRequests(myGroup)
+
+    -- Search box
+    local searchBox = AceGUI:Create("EditBox")
+    searchBox:SetLabel("Search requests:")
+    searchBox:SetFullWidth(true)
+    parent:AddChild(searchBox)
+    MC.UI.requestSearchFilter = ""
+    searchBox:SetCallback("OnTextChanged", function(widget)
+        MC.UI.requestSearchFilter = widget:GetText() or ""
+        if MC.UI.requestsGroup then
+            MC.UI:RebuildRequestRows(MC.UI.requestsGroup)
+        end
+    end)
+
+    local group = AceGUI:Create("SimpleGroup")
+    group:SetLayout("List")
+    group:SetFullWidth(true)
+    parent:AddChild(group)
+    MC.UI.requestsGroup = group
+    MC.UI:RebuildRequestRows(group)
+end
+
+-- Build / rebuild the My Requests section.
+function MC.UI:FillMyRequests(group)
+    local requests = MC.db.char.myRequests
+    if #requests == 0 then
+        local lbl = AceGUI:Create("Label")
+        lbl:SetText("No active requests.")
+        group:AddChild(lbl)
+    else
+        for _, entry in ipairs(requests) do
+            local row = AceGUI:Create("SimpleGroup")
+            row:SetFullWidth(true)
+            row:SetLayout("Flow")
+            local noteStr = (entry.note and entry.note ~= "")
+                and (" |cFF888888\226\128\148 " .. entry.note .. "|r") or ""
+            local lbl = AceGUI:Create("Label")
+            lbl:SetText("[WTB] " .. entry.itemName .. noteStr)
+            lbl:SetRelativeWidth(0.75)
+            row:AddChild(lbl)
+            local removeBtn = AceGUI:Create("Button")
+            removeBtn:SetText("Remove")
+            removeBtn:SetRelativeWidth(0.25)
+            local capturedID = entry.itemID
+            removeBtn:SetCallback("OnClick", function()
+                MC:RemoveMyRequest(capturedID)
+                if MC.UI.myRequestsGroup then
+                    MC.UI.myRequestsGroup:SetTitle(
+                        string.format("My Requests (%d/3)", #MC.db.char.myRequests))
+                    MC.UI.myRequestsGroup:ReleaseChildren()
+                    MC.UI:FillMyRequests(MC.UI.myRequestsGroup)
+                end
+            end)
+            row:AddChild(removeBtn)
+            group:AddChild(row)
+        end
+    end
+
+    -- Add Request button
+    if #requests < 3 then
+        local addBtn = AceGUI:Create("Button")
+        addBtn:SetText("Add Request")
+        addBtn:SetCallback("OnClick", function()
+            MC.UI:OpenRequestPicker()
+        end)
+        group:AddChild(addBtn)
+    end
+end
+
+-- Build / rebuild the request board rows.
+function MC.UI:RebuildRequestRows(parent)
+    local scroll = MC.UI.requestScrollFrame
+    if scroll then
+        scroll:ReleaseChildren()
+    else
+        scroll = AceGUI:Create("ScrollFrame")
+        scroll:SetLayout("List")
+        scroll:SetFullWidth(true)
+        scroll:SetHeight(270)
+        MC.UI.requestScrollFrame = scroll
+        parent:AddChild(scroll)
+    end
+
+    local filter = MC.UI.requestSearchFilter or ""
+    local entries = MC.Requests:GetVisible(filter)
+
+    -- Header
+    local header = AceGUI:Create("SimpleGroup")
+    header:SetFullWidth(true)
+    header:SetLayout("Flow")
+    for _, pair in ipairs({ {"Item", 0.32}, {"Buyer", 0.28}, {"Note", 0.27}, {"", 0.11} }) do
+        local h = AceGUI:Create("Label")
+        h:SetText(pair[1])
+        h:SetRelativeWidth(pair[2])
+        header:AddChild(h)
+    end
+    scroll:AddChild(header)
+
+    if #entries == 0 then
+        local empty = AceGUI:Create("Label")
+        empty:SetText("No requests found. Buyers: opt in and click 'Add Request' above!")
+        empty:SetFullWidth(true)
+        scroll:AddChild(empty)
+    else
+        for _, entry in ipairs(entries) do
+            local row = AceGUI:Create("SimpleGroup")
+            row:SetFullWidth(true)
+            row:SetLayout("Flow")
+
+            -- Icon
+            local icon = AceGUI:Create("Icon")
+            icon:SetImage(entry.itemIcon or "Interface\\Icons\\INV_Misc_QuestionMark")
+            icon:SetImageSize(16, 16)
+            icon:SetWidth(20)
+            local itemID = entry.itemID
+            icon.frame:SetScript("OnEnter", function(self)
+                GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                GameTooltip:SetHyperlink("item:" .. itemID)
+                GameTooltip:Show()
+            end)
+            icon.frame:SetScript("OnLeave", function() GameTooltip:Hide() end)
+            row:AddChild(icon)
+
+            local itemLbl = AceGUI:Create("Label")
+            itemLbl:SetText(entry.itemName)
+            itemLbl:SetRelativeWidth(0.30)
+            row:AddChild(itemLbl)
+
+            -- Buyer + freshness
+            local ageStr, ar, ag, ab = MC.UI:FormatAge(entry.receivedAt)
+            local colorHex = string.format("%02X%02X%02X",
+                math.floor(ar * 255), math.floor(ag * 255), math.floor(ab * 255))
+            local buyerLbl = AceGUI:Create("Label")
+            buyerLbl:SetText(entry.buyer .. " |cFF" .. colorHex .. ageStr .. "|r")
+            buyerLbl:SetRelativeWidth(0.28)
+            local buyerName = entry.buyer
+            buyerLbl.frame:SetScript("OnMouseDown", function(_, button)
+                if button == "RightButton" then ShowBlocklistMenu(buyerName) end
+            end)
+            row:AddChild(buyerLbl)
+
+            local noteLbl = AceGUI:Create("Label")
+            noteLbl:SetText(entry.note and ("|cFFCCCCCC" .. entry.note .. "|r") or "")
+            noteLbl:SetRelativeWidth(0.27)
+            row:AddChild(noteLbl)
+
+            -- "I can craft" whisper button
+            local craftBtn = AceGUI:Create("Button")
+            craftBtn:SetText("Craft")
+            craftBtn:SetRelativeWidth(0.13)
+            local seller    = entry.buyer
+            local itemName  = entry.itemName
+            craftBtn:SetCallback("OnClick", function()
+                ChatFrame_OpenChat("/w " .. seller .. " Hi, I can craft " .. itemName .. "!")
+            end)
+            row:AddChild(craftBtn)
+
+            scroll:AddChild(row)
+        end
+    end
+
+    -- Status line
+    local buyers = {}
+    for _, e in ipairs(entries) do buyers[e.buyer] = true end
+    local buyerCount = 0
+    for _ in pairs(buyers) do buyerCount = buyerCount + 1 end
+    local status = AceGUI:Create("Label")
+    status:SetText(string.format("Showing %d requests from %d buyers", #entries, buyerCount))
+    status:SetFullWidth(true)
+    scroll:AddChild(status)
+end
+
+-- Opens a small popup for buyers to add a WTB request by typing an item name.
+function MC.UI:OpenRequestPicker()
+    if MC.UI.requestPickerFrame then
+        MC.UI.requestPickerFrame:Release()
+        MC.UI.requestPickerFrame = nil
+    end
+
+    local picker = AceGUI:Create("Frame")
+    picker:SetTitle("Add Request — What do you need crafted?")
+    picker:SetLayout("List")
+    picker:SetWidth(380)
+    picker:SetHeight(220)
+    MC.UI.requestPickerFrame = picker
+
+    _G["MarketCraftsRequestPickerFrame"] = picker.frame
+    local _rpFound = false
+    for _, _n in ipairs(UISpecialFrames) do
+        if _n == "MarketCraftsRequestPickerFrame" then _rpFound = true; break end
+    end
+    if not _rpFound then tinsert(UISpecialFrames, "MarketCraftsRequestPickerFrame") end
+
+    picker:SetCallback("OnClose", function(widget)
+        AceGUI:Release(widget)
+        MC.UI.requestPickerFrame = nil
+    end)
+
+    local itemBox = AceGUI:Create("EditBox")
+    itemBox:SetLabel("Item name (e.g. Lionheart Helm):")
+    itemBox:SetFullWidth(true)
+    picker:AddChild(itemBox)
+
+    local noteBox = AceGUI:Create("EditBox")
+    noteBox:SetLabel("Note (optional, 60 chars):")
+    noteBox:SetFullWidth(true)
+    noteBox:SetMaxLetters(60)
+    picker:AddChild(noteBox)
+
+    local addBtn = AceGUI:Create("Button")
+    addBtn:SetText("Post Request")
+    addBtn:SetFullWidth(true)
+    addBtn:SetCallback("OnClick", function()
+        local rawName = itemBox:GetText() or ""
+        rawName = rawName:match("^%s*(.-)%s*$") or ""
+        if rawName == "" then
+            MC:Print("Please enter an item name.")
+            return
+        end
+        local note = noteBox:GetText() or ""
+        -- Use itemID = 0 as a sentinel for unresolved requests (name-only).
+        -- Receivers display itemName; icon resolution is skipped (no valid itemID).
+        local ok = MC:AddMyRequest(0, rawName, note)
+        if ok then
+            picker:Release()
+            MC.UI.requestPickerFrame = nil
+            if MC.UI.myRequestsGroup then
+                MC.UI.myRequestsGroup:SetTitle(
+                    string.format("My Requests (%d/3)", #MC.db.char.myRequests))
+                MC.UI.myRequestsGroup:ReleaseChildren()
+                MC.UI:FillMyRequests(MC.UI.myRequestsGroup)
+            end
+        end
+    end)
+    picker:AddChild(addBtn)
 end

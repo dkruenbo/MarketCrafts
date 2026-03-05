@@ -1,6 +1,6 @@
 -- Listener.lua — M3: Inbound message parser
 -- Listens to CHAT_MSG_CHANNEL for [MCR]-prefixed messages, parses them,
--- and feeds results into Cache. Also monitors CHAT_MSG_SYSTEM for throttle.
+-- and feeds results into Cache and Requests. Also monitors CHAT_MSG_SYSTEM for throttle.
 local AddonName, NS = ...
 local MC = NS.MC
 MC.Listener = {}
@@ -8,8 +8,10 @@ MC.Listener = {}
 ---------------------------------------------------------------------------
 -- Wire protocol prefixes
 ---------------------------------------------------------------------------
-local PREFIX_L = "[MCR]L:"
-local PREFIX_R = "[MCR]R:"
+local PREFIX_L  = "[MCR]L:"
+local PREFIX_R  = "[MCR]R:"
+local PREFIX_Q  = "[MCR]Q:"   -- F7: buyer request (add/update)
+local PREFIX_QR = "[MCR]QR:"  -- F7: buyer request remove
 
 ---------------------------------------------------------------------------
 -- Parsers
@@ -56,6 +58,37 @@ local function ParseRemove(msg, sender)
     return { itemID = itemID, seller = sender }
 end
 
+-- F7: Parse a buyer request.
+-- Wire format: [MCR]Q:itemID,itemName[,note]
+local function ParseRequest(msg, sender)
+    local body = string.sub(msg, #PREFIX_Q + 1)
+    -- 3-field: itemID, itemName (comma-free), note
+    local itemIDStr, itemName, note = body:match("^(%d+),([^,]+),(.+)$")
+    if not itemIDStr then
+        -- 2-field: itemID, itemName (may contain commas — greedy)
+        itemIDStr, itemName = body:match("^(%d+),(.+)$")
+        note = nil
+    end
+    if not itemIDStr then return nil end
+    local itemID = tonumber(itemIDStr)
+    if not itemID or itemID <= 0 then return nil end
+    return {
+        itemID   = itemID,
+        itemName = itemName,
+        note     = (note and note ~= "") and note or nil,
+        buyer    = sender,
+    }
+end
+
+-- F7: Parse a buyer request removal.
+-- Wire format: [MCR]QR:itemID
+local function ParseRequestRemove(msg, sender)
+    local body = string.sub(msg, #PREFIX_QR + 1)
+    local itemID = tonumber(body)
+    if not itemID or itemID <= 0 then return nil end
+    return { itemID = itemID, buyer = sender }
+end
+
 ---------------------------------------------------------------------------
 -- Event handler
 ---------------------------------------------------------------------------
@@ -91,6 +124,28 @@ function MC.Listener:OnChatMsgChannel(msg, sender, _, _, _, _, _, _, channelName
         end)
         if not ok and MC.debugMode then
             print("MCR ERROR (R):", err, "| msg:", msg, "| sender:", sender)
+        end
+    elseif string.sub(msg, 1, #PREFIX_QR) == PREFIX_QR then
+        -- F7: buyer request remove — check QR before Q (QR is a longer prefix)
+        local ok, err = pcall(function()
+            local data = ParseRequestRemove(msg, sender)
+            if data then
+                MC.Requests:Remove(data.buyer, data.itemID)
+            end
+        end)
+        if not ok and MC.debugMode then
+            print("MCR ERROR (QR):", err, "| msg:", msg, "| sender:", sender)
+        end
+    elseif string.sub(msg, 1, #PREFIX_Q) == PREFIX_Q then
+        -- F7: buyer request add/update
+        local ok, err = pcall(function()
+            local entry = ParseRequest(msg, sender)
+            if entry then
+                MC.Requests:AddOrUpdate(entry)
+            end
+        end)
+        if not ok and MC.debugMode then
+            print("MCR ERROR (Q):", err, "| msg:", msg, "| sender:", sender)
         end
     end
 end

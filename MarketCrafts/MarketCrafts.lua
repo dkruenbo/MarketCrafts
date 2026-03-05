@@ -15,6 +15,7 @@ local DB_DEFAULTS = {
     },
     char = {
         myListings  = {},   -- up to 5 entries: { itemID, profName, itemName }
+        myRequests  = {},   -- F7: up to 3 buyer WTB requests: { itemID, itemName, note }
         blocklist   = {},   -- { ["PlayerName"] = true }
         favorites   = {},   -- { ["PlayerName"] = true }
         settings    = {
@@ -43,8 +44,9 @@ end
 function MC:OnEnable()
     MC.Channel:Enable()
     MC.ChatFilter:Enable()
-    MC.Listener:Enable()   -- registers CHAT_MSG_CHANNEL + CHAT_MSG_SYSTEM
-    MC.Cache:Enable()      -- starts purge timer + GET_ITEM_INFO_RECEIVED
+    MC.Listener:Enable()    -- registers CHAT_MSG_CHANNEL + CHAT_MSG_SYSTEM
+    MC.Cache:Enable()       -- starts purge timer + GET_ITEM_INFO_RECEIVED
+    MC.Requests:Enable()    -- F7: starts request purge timer
     MC.MinimapButton:Create()
 end
 
@@ -110,6 +112,10 @@ function MC:HandleSlashCommand(input)
     elseif cmd == "importalt" then
         -- F5: snapshot current char's listings into the account-scoped alt store
         MC:ImportAlt()
+    elseif cmd == "request" then
+        -- F7: open main window on the Requests tab
+        MC.UI:Toggle()
+        MC.UI:ShowRequestsTab()
     elseif cmd == "sim" then
         MC.MockData:HandleSimCommand(arg)
     elseif cmd == "help" then
@@ -120,6 +126,7 @@ function MC:HandleSlashCommand(input)
         MC:Print("/mc unignore <Player> — unblock player")
         MC:Print("/mc list — show your active listings")
         MC:Print("/mc importalt — save current char's listings as alt profile (all chars broadcast them)")
+        MC:Print("/mc request — open Requests tab (WTB board)")
         MC:Print("/mc debug — toggle debug mode")
         MC:Print("/mc sim <N> — inject N fake sellers (debug mode)")
         MC:Print("/mc sim clear — remove simulated data")
@@ -201,6 +208,44 @@ end
 
 function MC:GetMyListings()
     return self.db.char.myListings
+end
+
+---------------------------------------------------------------------------
+-- F7 — Buyer request management
+---------------------------------------------------------------------------
+
+function MC:AddMyRequest(itemID, itemName, note)
+    local cleanNote = (note and note:match("^%s*(.-)%s*$") or "")
+    cleanNote = (cleanNote ~= "") and cleanNote:sub(1, 60) or nil
+    local requests = self.db.char.myRequests
+    for _, entry in ipairs(requests) do
+        if entry.itemID == itemID then
+            entry.itemName = itemName
+            entry.note     = cleanNote
+            MC.Broadcast:SendRequest(entry)
+            return true
+        end
+    end
+    if #requests >= 3 then
+        MC:Print("You can only post up to 3 requests.")
+        return false
+    end
+    local newEntry = { itemID = itemID, itemName = itemName, note = cleanNote }
+    table.insert(requests, newEntry)
+    MC.Broadcast:SendRequest(requests[#requests])
+    return true
+end
+
+function MC:RemoveMyRequest(itemID)
+    local requests = self.db.char.myRequests
+    for i, entry in ipairs(requests) do
+        if entry.itemID == itemID then
+            table.remove(requests, i)
+            MC.Broadcast:SendRequestRemove(itemID)
+            return true
+        end
+    end
+    return false
 end
 
 ---------------------------------------------------------------------------

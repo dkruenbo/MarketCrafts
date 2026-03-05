@@ -107,6 +107,24 @@ function MC.Broadcast:SendRemove(itemID)
     Enqueue(string.format("%sR:%d", PREFIX, itemID))
 end
 
+-- F7: Broadcast a buyer request (WTB)
+function MC.Broadcast:SendRequest(entry)
+    if not MC.db.char.settings.optedIn then return end
+    local itemName = entry.itemName:gsub(",", "")
+    if entry.note and entry.note ~= "" then
+        local note = entry.note:gsub(",", "")
+        Enqueue(string.format("%sQ:%d,%s,%s", PREFIX, entry.itemID, itemName, note))
+    else
+        Enqueue(string.format("%sQ:%d,%s", PREFIX, entry.itemID, itemName))
+    end
+end
+
+-- F7: Broadcast removal of a buyer request
+function MC.Broadcast:SendRequestRemove(itemID)
+    if not MC.db.char.settings.optedIn then return end
+    Enqueue(string.format("%sQR:%d", PREFIX, itemID))
+end
+
 function MC.Broadcast:SendAllListings()
     if not MC.db.char.settings.optedIn then return end
     -- Broadcast own listings

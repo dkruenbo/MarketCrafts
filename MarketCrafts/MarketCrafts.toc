@@ -2,7 +2,7 @@
 ## Title: MarketCrafts
 ## Notes: Server-wide crafting service board for TBC Classic
 ## Author: dkruenbo
-## Version: 0.1.0
+## Version: 1.0.0
 ## SavedVariables: MarketCraftsDB
 
 Libs\LibStub\LibStub.lua

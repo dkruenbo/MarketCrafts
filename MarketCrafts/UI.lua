@@ -13,7 +13,12 @@ local refreshTimer = nil          -- debounce timer for full Refresh()
 local myListingsTimer = nil       -- debounce timer for RefreshMyListings()
 local browseTimer = nil           -- debounce timer for RefreshBrowse()
 local requestsTimer = nil         -- debounce timer for RefreshRequests()
+local myServicesTimer = nil       -- debounce timer for RefreshMyServices()
+local browseServicesTimer = nil   -- debounce timer for RefreshBrowseServices()
+local lastOuterTab = "crafting"   -- persists across Refresh() calls
+local lastInnerTab = "listings"   -- persists across Refresh() calls
 local FillMyListings       -- forward declaration; assigned before BuildMyListingsPanel
+local FillMyServices       -- forward declaration; assigned before BuildMyServicesGroup
 local MCBlocklistMenuFrame -- F11: context menu frame (created once, reused)
 
 ---------------------------------------------------------------------------
@@ -37,8 +42,6 @@ function MC.UI:Open(initialTab)
     mainFrame:SetHeight(560)
 
     -- Register with UISpecialFrames so the Escape key closes this window.
-    -- AceGUI Frame does not do this itself. Frame_OnClose fires on :Hide(), so
-    -- WoW's Escape handler will correctly trigger our OnClose callback.
     _G["MarketCraftsMainFrame"] = mainFrame.frame
     local _mcFound = false
     for _, _n in ipairs(UISpecialFrames) do
@@ -54,56 +57,81 @@ function MC.UI:Open(initialTab)
     end
 
     mainFrame:SetCallback("OnClose", function(widget)
-        -- Clear all cached widget references so stale refs don't survive a re-open
-        MC.UI.browseScrollFrame  = nil
-        MC.UI.browseGroup        = nil
-        MC.UI.myListingsGroup    = nil
-        MC.UI.profChipsRow       = nil
-        MC.UI.requestsGroup      = nil   -- F7
-        MC.UI.requestScrollFrame = nil   -- F7
-        MC.UI.myRequestsGroup    = nil   -- F7
+        -- Clear all cached widget references
+        MC.UI.browseScrollFrame   = nil
+        MC.UI.browseGroup         = nil
+        MC.UI.myListingsGroup     = nil
+        MC.UI.profChipsRow        = nil
+        MC.UI.requestsGroup       = nil
+        MC.UI.requestScrollFrame  = nil
+        MC.UI.myRequestsGroup     = nil
+        MC.UI.servicesScroll      = nil
+        MC.UI.myServicesGroup     = nil
+        MC.UI.browseServicesGroup = nil
+        MC.UI.servicesDataScroll  = nil
+        MC.UI.craftingTabs        = nil
+        MC.UI.mainTabs            = nil
         AceGUI:Release(widget)
         mainFrame = nil
     end)
 
-    -- F7: tab layout — My Listings | Browse | Requests
-    local tabs = AceGUI:Create("TabGroup")
-    tabs:SetLayout("Fill")
-    tabs:SetFullWidth(true)
-    tabs:SetFullHeight(true)
-    tabs:SetTabs({
-        { text = "My Listings", value = "listings" },
-        { text = "Browse",      value = "browse"   },
-        { text = "Requests",    value = "requests"  },
+    -- Outer tab group: Crafting | Services
+    local outerTabs = AceGUI:Create("TabGroup")
+    outerTabs:SetLayout("Fill")
+    outerTabs:SetFullWidth(true)
+    outerTabs:SetFullHeight(true)
+    outerTabs:SetTabs({
+        { text = "Crafting",  value = "crafting"  },
+        { text = "Services",  value = "services"  },
     })
 
-    local scrollContainer = AceGUI:Create("ScrollFrame")
-    scrollContainer:SetLayout("List")
-    scrollContainer:SetFullWidth(true)
-
-    tabs:SetCallback("OnGroupSelected", function(widget, _, tab)
-        scrollContainer:ReleaseChildren()
-        -- Clear panel-specific cached references so rebuilds start fresh
-        MC.UI.browseScrollFrame  = nil
-        MC.UI.browseGroup        = nil
-        MC.UI.myListingsGroup    = nil
-        MC.UI.profChipsRow       = nil
-        MC.UI.requestsGroup      = nil
-        MC.UI.requestScrollFrame = nil
-        MC.UI.myRequestsGroup    = nil
-        if tab == "listings" then
-            MC.UI:BuildMyListingsPanel(scrollContainer)
-        elseif tab == "browse" then
-            MC.UI:BuildBrowsePanel(scrollContainer)
-        elseif tab == "requests" then
-            MC.UI:BuildRequestsPanel(scrollContainer)
+    outerTabs:SetCallback("OnGroupSelected", function(_, _, outerTab)
+        lastOuterTab = outerTab
+        outerTabs:ReleaseChildren()
+        -- Clear all cached widget refs on outer tab switch
+        MC.UI.browseScrollFrame   = nil
+        MC.UI.browseGroup         = nil
+        MC.UI.myListingsGroup     = nil
+        MC.UI.profChipsRow        = nil
+        MC.UI.requestsGroup       = nil
+        MC.UI.requestScrollFrame  = nil
+        MC.UI.myRequestsGroup     = nil
+        MC.UI.servicesScroll      = nil
+        MC.UI.myServicesGroup     = nil
+        MC.UI.browseServicesGroup = nil
+        MC.UI.servicesDataScroll  = nil
+        MC.UI.craftingTabs        = nil
+        if outerTab == "crafting" then
+            MC.UI:BuildCraftingPanel(outerTabs)
+        elseif outerTab == "services" then
+            MC.UI:BuildServicesPanel(outerTabs)
         end
     end)
 
-    tabs:AddChild(scrollContainer)
-    mainFrame:AddChild(tabs)
-    MC.UI.mainTabs = tabs
-    tabs:SelectTab(initialTab or "listings")
+    mainFrame:AddChild(outerTabs)
+    MC.UI.mainTabs = outerTabs
+
+    -- Map initialTab to outer/inner selection
+    local outerInitial = lastOuterTab
+    local innerInitial = lastInnerTab
+    if initialTab == "services" then
+        outerInitial = "services"
+    elseif initialTab == "requests" then
+        outerInitial = "crafting"
+        innerInitial = "requests"
+    elseif initialTab == "browse" then
+        outerInitial = "crafting"
+        innerInitial = "browse"
+    elseif initialTab == "listings" then
+        outerInitial = "crafting"
+        innerInitial = "listings"
+    end
+
+    -- Store pending inner tab; BuildCraftingPanel reads and clears it
+    if outerInitial == "crafting" then
+        MC.UI._pendingInnerTab = innerInitial
+    end
+    outerTabs:SelectTab(outerInitial)
 end
 
 -- Update only the status bar text of an already-open window.
@@ -117,10 +145,23 @@ function MC.UI:UpdateStatus()
     end
 end
 
--- F7: programmatically switch to the Requests tab (used by /mc request)
+-- Switch to the Requests tab (used by /mc request).
 function MC.UI:ShowRequestsTab()
+    if not MC.UI.mainTabs then return end
+    if MC.UI.craftingTabs then
+        -- Crafting is already the active outer tab — just switch inner tab
+        MC.UI.craftingTabs:SelectTab("requests")
+    else
+        -- Currently on Services; set pending and switch outer tab
+        MC.UI._pendingInnerTab = "requests"
+        MC.UI.mainTabs:SelectTab("crafting")
+    end
+end
+
+-- Switch to the Services tab (used by /mc services).
+function MC.UI:ShowServicesTab()
     if MC.UI.mainTabs then
-        MC.UI.mainTabs:SelectTab("requests")
+        MC.UI.mainTabs:SelectTab("services")
     end
 end
 
@@ -164,7 +205,14 @@ function MC.UI:Refresh()
     if refreshTimer then MC:CancelTimer(refreshTimer) end
     refreshTimer = MC:ScheduleTimer(function()
         refreshTimer = nil
-        if mainFrame then MC.UI:Open() end
+        if mainFrame then
+            -- Re-open preserving the active outer/inner tab
+            if lastOuterTab == "services" then
+                MC.UI:Open("services")
+            else
+                MC.UI:Open(lastInnerTab)
+            end
+        end
     end, 0.1)
 end
 
@@ -207,6 +255,305 @@ function MC.UI:RefreshRequests()
             MC.UI:RebuildRequestRows(MC.UI.requestsGroup)
         end
     end, 0.1)
+end
+
+-- Partial refresh: rebuild only the My Services section
+function MC.UI:RefreshMyServices()
+    if not mainFrame then return end
+    if not MC.UI.myServicesGroup then return end  -- Services tab not visible
+    if myServicesTimer then MC:CancelTimer(myServicesTimer) end
+    myServicesTimer = MC:ScheduleTimer(function()
+        myServicesTimer = nil
+        if mainFrame and MC.UI.myServicesGroup then
+            MC.UI.myServicesGroup:ReleaseChildren()
+            FillMyServices(MC.UI.myServicesGroup)
+        end
+    end, 0.1)
+end
+
+-- Partial refresh: rebuild only the Browse Services data rows
+function MC.UI:RefreshBrowseServices()
+    if not mainFrame then return end
+    if not MC.UI.browseServicesGroup then return end  -- Services tab not visible
+    if browseServicesTimer then MC:CancelTimer(browseServicesTimer) end
+    browseServicesTimer = MC:ScheduleTimer(function()
+        browseServicesTimer = nil
+        if mainFrame and MC.UI.browseServicesGroup then
+            MC.UI:RebuildServiceRows()
+        end
+    end, 0.1)
+end
+
+---------------------------------------------------------------------------
+-- Crafting panel (inner tab group wrapping existing craft panels)
+---------------------------------------------------------------------------
+function MC.UI:BuildCraftingPanel(parent)
+    local innerTabs = AceGUI:Create("TabGroup")
+    innerTabs:SetLayout("Fill")
+    innerTabs:SetFullWidth(true)
+    innerTabs:SetFullHeight(true)
+    innerTabs:SetTabs({
+        { text = "My Listings", value = "listings" },
+        { text = "Browse",      value = "browse"   },
+        { text = "Requests",    value = "requests"  },
+    })
+
+    local scrollContainer = AceGUI:Create("ScrollFrame")
+    scrollContainer:SetLayout("List")
+    scrollContainer:SetFullWidth(true)
+
+    innerTabs:SetCallback("OnGroupSelected", function(_, _, innerTab)
+        lastInnerTab = innerTab
+        scrollContainer:ReleaseChildren()
+        -- Clear crafting-specific cached refs
+        MC.UI.browseScrollFrame  = nil
+        MC.UI.browseGroup        = nil
+        MC.UI.myListingsGroup    = nil
+        MC.UI.profChipsRow       = nil
+        MC.UI.requestsGroup      = nil
+        MC.UI.requestScrollFrame = nil
+        MC.UI.myRequestsGroup    = nil
+        if innerTab == "listings" then
+            MC.UI:BuildMyListingsPanel(scrollContainer)
+        elseif innerTab == "browse" then
+            MC.UI:BuildBrowsePanel(scrollContainer)
+        elseif innerTab == "requests" then
+            MC.UI:BuildRequestsPanel(scrollContainer)
+        end
+    end)
+
+    innerTabs:AddChild(scrollContainer)
+    parent:AddChild(innerTabs)
+    MC.UI.craftingTabs = innerTabs
+
+    local innerTab = MC.UI._pendingInnerTab or "listings"
+    MC.UI._pendingInnerTab = nil
+    innerTabs:SelectTab(innerTab)
+end
+
+---------------------------------------------------------------------------
+-- Services panel
+---------------------------------------------------------------------------
+function MC.UI:BuildServicesPanel(parent)
+    local scroll = AceGUI:Create("ScrollFrame")
+    scroll:SetLayout("List")
+    scroll:SetFullWidth(true)
+    scroll:SetFullHeight(true)
+    parent:AddChild(scroll)
+    MC.UI.servicesScroll = scroll
+    MC.UI:BuildMyServicesGroup(scroll)
+    MC.UI:BuildBrowseServicesGroup(scroll)
+end
+
+function MC.UI:BuildMyServicesGroup(parent)
+    local group = AceGUI:Create("InlineGroup")
+    group:SetTitle("My Services")
+    group:SetFullWidth(true)
+    group:SetLayout("List")
+    parent:AddChild(group)
+    MC.UI.myServicesGroup = group
+    FillMyServices(group)
+end
+
+FillMyServices = function(group)
+    local availDefs = MC.Services:GetAvailableDefs()
+
+    -- Opt-in reminder
+    if not MC.db.char.settings.optedIn then
+        local hint = AceGUI:Create("Label")
+        hint:SetText("|cFFFFCC00Not broadcasting — go to the Crafting tab and opt in to advertise services.|r")
+        hint:SetFullWidth(true)
+        group:AddChild(hint)
+    end
+
+    if #availDefs == 0 then
+        local lbl = AceGUI:Create("Label")
+        local _, cls = UnitClass("player")
+        lbl:SetText("Your class (" .. (cls or "?") .. ") does not offer any tracked services.")
+        lbl:SetFullWidth(true)
+        group:AddChild(lbl)
+        return
+    end
+
+    for _, def in ipairs(availDefs) do
+        -- Check if already active
+        local existing = nil
+        for _, svc in ipairs(MC.db.char.myServices) do
+            if svc.serviceKey == def.key then existing = svc; break end
+        end
+
+        local row = AceGUI:Create("SimpleGroup")
+        row:SetFullWidth(true)
+        row:SetLayout("Flow")
+
+        if existing then
+            -- Active row: label+note text + Remove button
+            local noteStr = (existing.note and existing.note ~= "")
+                and (" |cFF888888\226\128\148 " .. existing.note .. "|r")
+                or ""
+            local lbl = AceGUI:Create("Label")
+            lbl:SetText("|cFF44FF44[Active]|r " .. def.label .. noteStr)
+            lbl:SetRelativeWidth(0.75)
+            row:AddChild(lbl)
+
+            local removeBtn = AceGUI:Create("Button")
+            removeBtn:SetText("Remove")
+            removeBtn:SetRelativeWidth(0.22)
+            local capturedKey = def.key
+            removeBtn:SetCallback("OnClick", function()
+                MC.Services:Remove(capturedKey)
+            end)
+            row:AddChild(removeBtn)
+        else
+            -- Inactive row: label + note editbox + Add button
+            local lbl = AceGUI:Create("Label")
+            lbl:SetText(def.label)
+            lbl:SetWidth(110)
+            row:AddChild(lbl)
+
+            local noteBox = AceGUI:Create("EditBox")
+            noteBox:SetLabel("Note / price (optional):")
+            noteBox:SetRelativeWidth(0.53)
+            noteBox:SetMaxLetters(80)
+            noteBox:DisableButton(true)
+            -- Portals: auto-fill detected destinations
+            if def.key == "portal" then
+                local autoNote = MC.Services:BuildPortalNote()
+                if autoNote then noteBox:SetText(autoNote) end
+            end
+            row:AddChild(noteBox)
+
+            local addBtn = AceGUI:Create("Button")
+            addBtn:SetText("Add")
+            addBtn:SetRelativeWidth(0.22)
+            local capturedKey = def.key
+            addBtn:SetCallback("OnClick", function()
+                MC.Services:Add(capturedKey, noteBox:GetText())
+            end)
+            row:AddChild(addBtn)
+        end
+
+        group:AddChild(row)
+    end
+end
+
+function MC.UI:BuildBrowseServicesGroup(parent)
+    local group = AceGUI:Create("InlineGroup")
+    group:SetTitle("Browse Services")
+    group:SetFullWidth(true)
+    group:SetLayout("List")
+    parent:AddChild(group)
+    MC.UI.browseServicesGroup = group
+
+    -- Search bar
+    local controlRow = AceGUI:Create("SimpleGroup")
+    controlRow:SetFullWidth(true)
+    controlRow:SetLayout("Flow")
+
+    local searchBox = AceGUI:Create("EditBox")
+    searchBox:SetLabel("Search (service, seller, note):")
+    searchBox:SetRelativeWidth(0.65)
+    searchBox:SetCallback("OnTextChanged", function(widget)
+        MC.UI.serviceFilter = (widget:GetText() or ""):lower()
+        MC.UI:RebuildServiceRows()
+    end)
+    controlRow:AddChild(searchBox)
+    group:AddChild(controlRow)
+
+    MC.UI.serviceFilter = ""
+    MC.UI:RebuildServiceRows()
+end
+
+function MC.UI:RebuildServiceRows()
+    local group = MC.UI.browseServicesGroup
+    if not group then return end
+
+    -- Reuse the scroll frame; only release its children
+    local scroll = MC.UI.servicesDataScroll
+    if scroll then
+        scroll:ReleaseChildren()
+    else
+        scroll = AceGUI:Create("ScrollFrame")
+        scroll:SetLayout("List")
+        scroll:SetFullWidth(true)
+        scroll:SetHeight(240)
+        MC.UI.servicesDataScroll = scroll
+        group:AddChild(scroll)
+    end
+
+    local filter = MC.UI.serviceFilter or ""
+    local entries = MC.Services:GetVisible(filter)
+
+    -- Header row
+    local header = AceGUI:Create("SimpleGroup")
+    header:SetFullWidth(true)
+    header:SetLayout("Flow")
+    for _, pair in ipairs({ {"Service", 0.28}, {"Seller", 0.32}, {"Note", 0.22}, {"", 0.18} }) do
+        local h = AceGUI:Create("Label")
+        h:SetText(pair[1])
+        h:SetRelativeWidth(pair[2])
+        header:AddChild(h)
+    end
+    scroll:AddChild(header)
+
+    if #entries == 0 then
+        local empty = AceGUI:Create("Label")
+        empty:SetText("No services found. Check back once others are online!")
+        empty:SetFullWidth(true)
+        scroll:AddChild(empty)
+    else
+        for _, entry in ipairs(entries) do
+            local row = AceGUI:Create("SimpleGroup")
+            row:SetFullWidth(true)
+            row:SetLayout("Flow")
+
+            local svcLbl = AceGUI:Create("Label")
+            svcLbl:SetText(MC.Services:GetLabelForKey(entry.serviceKey))
+            svcLbl:SetRelativeWidth(0.28)
+            row:AddChild(svcLbl)
+
+            local ageStr, ar, ag, ab = MC.UI:FormatAge(entry.receivedAt)
+            local colorHex = string.format("%02X%02X%02X",
+                math.floor(ar * 255), math.floor(ag * 255), math.floor(ab * 255))
+            local sellerLbl = AceGUI:Create("Label")
+            sellerLbl:SetText(entry.seller .. " |cFF" .. colorHex .. ageStr .. "|r")
+            sellerLbl:SetRelativeWidth(0.32)
+            row:AddChild(sellerLbl)
+
+            local noteLbl = AceGUI:Create("Label")
+            noteLbl:SetText(entry.note or "")
+            noteLbl:SetRelativeWidth(0.22)
+            row:AddChild(noteLbl)
+
+            local whisperBtn = AceGUI:Create("Button")
+            whisperBtn:SetText("Whisper")
+            whisperBtn:SetRelativeWidth(0.18)
+            local seller  = entry.seller
+            local svcKey  = entry.serviceKey
+            whisperBtn:SetCallback("OnClick", function()
+                local label = MC.Services:GetLabelForKey(svcKey)
+                local tpl   = (MC.db.char.settings.whisperTemplate or "/w {seller} "):sub(1, 200)
+                local msg   = tpl:gsub("{seller}", seller)
+                                 :gsub("{item}",   label)
+                                 :gsub("{prof}",   "Service")
+                ChatFrame_OpenChat(msg)
+            end)
+            row:AddChild(whisperBtn)
+            scroll:AddChild(row)
+        end
+    end
+
+    -- Status line
+    local sellers = {}
+    for _, e in ipairs(entries) do sellers[e.seller] = true end
+    local sellerCount = 0
+    for _ in pairs(sellers) do sellerCount = sellerCount + 1 end
+    local statusLbl = AceGUI:Create("Label")
+    statusLbl:SetText(string.format("Showing %d services from %d providers", #entries, sellerCount))
+    statusLbl:SetFullWidth(true)
+    scroll:AddChild(statusLbl)
+
+    MC.UI.servicesDataScroll = scroll
 end
 
 ---------------------------------------------------------------------------

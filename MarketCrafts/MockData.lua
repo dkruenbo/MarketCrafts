@@ -82,6 +82,24 @@ local SELLER_NAMES = {
     "Uldaman", "Vexoria", "Wyrmcrest", "Xalvador", "Zandalor",
 }
 
+-- Mock service providers injected by SimGenerate
+local MOCK_SERVICES = {
+    { serviceKey = "portal",   note = "SW/IF/Darn/Exo/Shatt, 5g each" },
+    { serviceKey = "portal",   note = "All portals, 2g per portal"     },
+    { serviceKey = "portal",   note = "Org/TB/UC/SM/Shatt available"   },
+    { serviceKey = "conjure",  note = "Free!"                          },
+    { serviceKey = "conjure",  note = "Free, tip appreciated"          },
+    { serviceKey = "summon",   note = "1g per summon"                  },
+    { serviceKey = "summon",   note = "Free for guildies, 50s others"  },
+    { serviceKey = "lockpick", note = "1g per lockbox"                 },
+    { serviceKey = "lockpick", note = "Free in trade channel"          },
+}
+
+local MOCK_SERVICE_SELLERS = {
+    "Magatha", "Firewing", "Pyraxis", "Conjuria", "Soulbinder",
+    "Dusklock", "Arcadia", "Netherweave", "Shadowpick", "Portalix",
+}
+
 ---------------------------------------------------------------------------
 -- Simulation commands
 ---------------------------------------------------------------------------
@@ -159,10 +177,27 @@ function MC.MockData:SimGenerate(count)
         MC:Debug("Mock data injected via Cache:AddOrUpdate — all validation ran.")
         MC:Debug("Current cache size:", MC.Cache:GetCacheSize())
     end
+
+    -- Inject mock service providers (subset of MOCK_SERVICES)
+    local numServices = math.min(count, #MOCK_SERVICES)
+    for i = 1, numServices do
+        local svcDef  = MOCK_SERVICES[i]
+        local seller  = MOCK_SERVICE_SELLERS[((i - 1) % #MOCK_SERVICE_SELLERS) + 1]
+        MC.Services:CacheAdd({
+            seller     = seller,
+            serviceKey = svcDef.serviceKey,
+            note       = svcDef.note,
+            _simulated = true,
+        })
+    end
+    if MC.debugMode then
+        MC:Debug("Injected", numServices, "mock service entries.")
+    end
 end
 
 --- Remove all simulated entries from cache.
 function MC.MockData:SimClear()
     local cleared = MC.Cache:ClearSimulated()
-    MC:Printf("Cleared %d simulated listing(s).", cleared)
+    local clearedSvc = MC.Services:ClearSimulated()
+    MC:Printf("Cleared %d simulated listing(s) and %d service(s).", cleared, clearedSvc)
 end

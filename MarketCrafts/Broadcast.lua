@@ -6,7 +6,8 @@ MC.Broadcast = {}
 ---------------------------------------------------------------------------
 -- Constants
 ---------------------------------------------------------------------------
-local KEEPALIVE_INTERVAL = 1200  -- 20 minutes
+local KEEPALIVE_INTERVAL = 1200  -- 20 minutes (base)
+local KEEPALIVE_JITTER    = 120   -- ±2 minutes random spread per cycle
 local BASE_SPACING       = 1.5   -- seconds between messages in a burst
 local BACKOFF_SPACING    = 3.0   -- increased spacing during back-off
 local PREFIX             = "[MCR]"
@@ -140,6 +141,34 @@ function MC.Broadcast:SendRequestRemove(itemName)
     Enqueue(string.format("%sQR:%s", PREFIX, itemName:gsub(",", "")))
 end
 
+-- Services: broadcast a service listing offer.
+-- Wire: [MCR]SV:<serviceKey>[,<note>]
+function MC.Broadcast:SendService(entry)
+    if not MC.db.char.settings.optedIn then return end
+    local safeKey = entry.serviceKey:gsub(",", "")
+    local payload
+    if entry.note and entry.note ~= "" then
+        local safeNote = entry.note:gsub(",", "")
+        payload = string.format("%sSV:%s,%s", PREFIX, safeKey, safeNote)
+    else
+        payload = string.format("%sSV:%s", PREFIX, safeKey)
+    end
+    Enqueue(payload)
+    -- Mirror into local cache so own services appear in Browse immediately.
+    MC.Services:CacheAdd({
+        seller     = UnitName("player"),
+        serviceKey = entry.serviceKey,
+        note       = entry.note,
+    })
+end
+
+-- Services: broadcast removal of a service listing.
+-- Wire: [MCR]SVR:<serviceKey>
+function MC.Broadcast:SendServiceRemove(serviceKey)
+    if not MC.db.char.settings.optedIn then return end
+    Enqueue(string.format("%sSVR:%s", PREFIX, serviceKey:gsub(",", "")))
+end
+
 function MC.Broadcast:SendAllListings()
     if not MC.db.char.settings.optedIn then return end
     -- Broadcast own listings
@@ -159,6 +188,10 @@ function MC.Broadcast:SendAllListings()
             end
         end
     end
+    -- Services: broadcast own service listings
+    for _, svc in ipairs(MC.db.char.myServices) do
+        MC.Broadcast:SendService(svc)
+    end
     -- F7: re-broadcast own buyer requests so they survive TTL expiry on receivers
     for _, entry in ipairs(MC.db.char.myRequests) do
         MC.Broadcast:SendRequest(entry)
@@ -167,12 +200,22 @@ end
 
 ---------------------------------------------------------------------------
 -- Keep-alive (called by Channel.lua after successful YOU_JOINED)
+-- Uses a self-rescheduling one-shot timer with ±2min jitter per cycle so
+-- that a large server population logging in together (e.g. post-maintenance)
+-- does not lock-step their broadcasts and spike the channel all at once.
 ---------------------------------------------------------------------------
+local function ScheduleNextKeepAlive()
+    local jitter   = math.random(-KEEPALIVE_JITTER, KEEPALIVE_JITTER)
+    local interval = KEEPALIVE_INTERVAL + jitter  -- 18–22 minutes; well under 30-min TTL
+    keepAliveTimer = MC:ScheduleTimer(function()
+        MC.Broadcast:SendAllListings()
+        ScheduleNextKeepAlive()  -- re-arm with a fresh jitter value
+    end, interval)
+end
+
 function MC.Broadcast:StartKeepAlive()
     MC.Broadcast:StopKeepAlive()
-    keepAliveTimer = MC:ScheduleRepeatingTimer(function()
-        MC.Broadcast:SendAllListings()
-    end, KEEPALIVE_INTERVAL)
+    ScheduleNextKeepAlive()
 end
 
 function MC.Broadcast:StopKeepAlive()

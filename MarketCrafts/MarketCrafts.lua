@@ -16,6 +16,7 @@ local DB_DEFAULTS = {
     char = {
         myListings  = {},   -- up to 5 entries: { itemID, profName, itemName }
         myRequests  = {},   -- F7: up to 3 buyer WTB requests: { itemName, note }
+        myServices  = {},   -- service listings: { serviceKey, note }
         blocklist   = {},   -- { ["PlayerName"] = true }
         favorites   = {},   -- kept for SavedVariables compat, no longer used
         settings    = {
@@ -47,6 +48,7 @@ function MC:OnEnable()
     MC.Listener:Enable()    -- registers CHAT_MSG_CHANNEL + CHAT_MSG_SYSTEM
     MC.Cache:Enable()       -- starts purge timer + GET_ITEM_INFO_RECEIVED
     MC.Requests:Enable()    -- F7: starts request purge timer
+    MC.Services:Enable()    -- services: starts purge timer
     MC.MinimapButton:Create()
 end
 
@@ -102,6 +104,8 @@ function MC:HandleSlashCommand(input)
     elseif cmd == "request" then
         -- F7: open main window directly on the Requests tab
         MC.UI:Open("requests")
+    elseif cmd == "services" then
+        MC.UI:Open("services")
     elseif cmd == "sim" then
         MC.MockData:HandleSimCommand(arg)
     elseif cmd == "help" then
@@ -116,8 +120,9 @@ function MC:HandleSlashCommand(input)
         MC:Print("/mc debug — toggle debug mode")
         MC:Print("/mc sim <N> — inject N fake sellers (debug mode)")
         MC:Print("/mc sim clear — remove simulated data")
-        MC:Print("/mc template [text] — view/set whisper template ({seller},{item},{prof})")        
+        MC:Print("/mc template [text] — view/set whisper template ({seller},{item},{prof})")
         MC:Print("/mc unignore <Player> — unblock (or right-click seller in Browse)")
+        MC:Print("/mc services — open Services tab")
     else
         MC:Print("Unknown command. Type /mc help.")
     end
@@ -148,8 +153,82 @@ end
 -- M2 — Listing Management API
 ---------------------------------------------------------------------------
 
+-- Maps every known client-locale profession string to its canonical English
+-- name.  This is applied at add-time so the wire format and filter chips are
+-- always locale-neutral.  English entries are included so the lookup works
+-- on enUS/enGB clients too (identity mapping).
+-- Covers: enUS/enGB, deDE, frFR, ruRU — the most common EU-realm client locales.
+local PROF_CANON = {
+    -- enUS / enGB
+    ["Alchemy"]          = "Alchemy",
+    ["Blacksmithing"]    = "Blacksmithing",
+    ["Enchanting"]       = "Enchanting",
+    ["Engineering"]      = "Engineering",
+    ["Herbalism"]        = "Herbalism",
+    ["Jewelcrafting"]    = "Jewelcrafting",
+    ["Leatherworking"]   = "Leatherworking",
+    ["Mining"]           = "Mining",
+    ["Skinning"]         = "Skinning",
+    ["Tailoring"]        = "Tailoring",
+    ["First Aid"]        = "First Aid",
+    ["Cooking"]          = "Cooking",
+    ["Fishing"]          = "Fishing",
+    -- deDE
+    ["Alchemie"]                = "Alchemy",
+    ["Schmiedekunst"]           = "Blacksmithing",
+    ["Verzauberung"]            = "Enchanting",
+    ["Ingenieurskunst"]         = "Engineering",
+    ["Kr\195\164uterkunde"]     = "Herbalism",   -- Kräuterkunde
+    ["Juwelenschleifen"]        = "Jewelcrafting",
+    ["Lederverarbeitung"]       = "Leatherworking",
+    ["Bergbau"]                 = "Mining",
+    ["K\195\188rschnerei"]      = "Skinning",    -- Kürschnerei
+    ["Schneiderei"]             = "Tailoring",
+    ["Erste Hilfe"]             = "First Aid",
+    ["Kochen"]                  = "Cooking",
+    ["Angeln"]                  = "Fishing",
+    -- frFR
+    ["Alchimie"]                = "Alchemy",
+    ["Forge"]                   = "Blacksmithing",
+    ["Enchantement"]            = "Enchanting",
+    ["Ing\195\169nierie"]       = "Engineering",  -- Ingénierie
+    ["Herboristerie"]           = "Herbalism",
+    ["Joaillerie"]              = "Jewelcrafting",
+    ["Travail du cuir"]         = "Leatherworking",
+    ["Minage"]                  = "Mining",
+    ["D\195\169pe\195\167age"]  = "Skinning",    -- Dépeçage
+    ["Couture"]                 = "Tailoring",
+    ["Premiers secours"]        = "First Aid",
+    ["Cuisine"]                 = "Cooking",
+    ["P\195\170che"]            = "Fishing",     -- Pêche
+    -- ruRU
+    ["\208\144\208\187\209\133\208\184\208\188\208\184\209\143"]                          = "Alchemy",        -- Алхимия
+    ["\208\154\209\131\208\183\208\189\208\181\209\135\208\189\208\190\208\181 \208\180\208\181\208\187\208\190"] = "Blacksmithing",  -- Кузнечное дело
+    ["\208\157\208\176\208\187\208\190\208\182\208\181\208\189\208\184\208\181 \209\135\208\176\209\128"]       = "Enchanting",     -- Наложение чар
+    ["\208\152\208\189\208\182\208\181\208\189\208\181\209\128\208\189\208\190\208\181 \208\180\208\181\208\187\208\190"] = "Engineering",   -- Инженерное дело
+    ["\208\162\209\128\208\176\208\178\209\143 \208\186\200\190\208\182\208\184"]         = "Herbalism",      -- Сбор трав  (alternate)
+    ["\208\161\208\177\208\190\209\128 \209\130\209\128\208\176\208\178"]              = "Herbalism",      -- Сбор трав
+    ["\208\174\208\178\208\181\208\187\208\184\209\128\208\189\208\190\208\181 \208\180\208\181\208\187\208\190"] = "Jewelcrafting",  -- Ювелирное дело
+    ["\208\158\208\177\209\128\208\176\208\177\208\190\209\130\208\186\208\176 \208\186\208\190\208\182\208\184"] = "Leatherworking", -- Обработка кожи
+    ["\208\147\208\190\209\128\208\189\208\190\208\180\208\190\208\177\209\139\209\135\208\189\208\190\208\181 \208\180\208\181\208\187\208\190"] = "Mining",        -- Горнодобывающее дело
+    ["\208\161\208\189\209\143\209\130\208\184\208\181 \209\136\208\186\209\131\209\128"] = "Skinning",      -- Снятие шкур
+    ["\208\159\208\190\209\128\209\130\208\189\209\143\208\182\208\189\208\190\208\181 \208\180\208\181\208\187\208\190"] = "Tailoring",     -- Портняжное дело
+    ["\208\159\208\181\209\128\208\178\208\176\209\143 \208\191\208\190\208\188\208\190\209\137\209\140"] = "First Aid",    -- Первая помощь
+    ["\208\154\209\131\208\187\208\184\208\189\208\176\209\128\208\184\209\143"]           = "Cooking",       -- Кулинария
+    ["\208\160\209\139\208\177\208\190\208\187\208\190\208\178\209\129\209\130\208\178\208\190"] = "Fishing",      -- Рыболовство
+}
+
+-- Returns the canonical English profession name, or the original string
+-- if no mapping is found (future-proofing for unknown locales).
+function MC:CanonicalProfName(name)
+    return PROF_CANON[name] or name
+end
+
 -- Add or update a listing (upsert by itemID)
 function MC:AddMyListing(itemID, profName, itemName, note, cdSeconds)
+    -- Normalise profession name to canonical English so the wire and filter
+    -- chips are consistent across all client locales (deDE, frFR, ruRU, enUS).
+    profName = MC:CanonicalProfName(profName)
     -- Normalise note: nil or blank → nil; otherwise trim to 60 chars
     local cleanNote = (note and note:match("^%s*(.-)%s*$") or "")
     cleanNote = (cleanNote ~= "") and cleanNote:sub(1, 60) or nil

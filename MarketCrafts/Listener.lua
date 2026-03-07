@@ -12,6 +12,8 @@ local PREFIX_L  = "[MCR]L:"
 local PREFIX_R  = "[MCR]R:"
 local PREFIX_Q  = "[MCR]Q:"   -- F7: buyer request (add/update)
 local PREFIX_QR = "[MCR]QR:"  -- F7: buyer request remove
+local PREFIX_SVR = "[MCR]SVR:" -- service remove (checked before SV — longer prefix)
+local PREFIX_SV  = "[MCR]SV:"  -- service offer
 
 ---------------------------------------------------------------------------
 -- Parsers
@@ -93,6 +95,46 @@ local function ParseRequestRemove(msg, sender)
     return { itemName = body, buyer = sender }
 end
 
+-- Parse a service offer.
+-- Wire format: [MCR]SV:<serviceKey>[,<note>]
+local function ParseService(msg, sender)
+    local body = string.sub(msg, #PREFIX_SV + 1)
+    if not body or body == "" then return nil end
+    local serviceKey, note = body:match("^([^,]+),(.+)$")
+    if not serviceKey then
+        serviceKey = body
+        note = nil
+    end
+    -- Validate: only accept known service keys
+    local valid = false
+    for _, def in ipairs(MC.Services.DEFS) do
+        if def.key == serviceKey then valid = true; break end
+    end
+    if not valid then return nil end
+    return {
+        seller     = sender,
+        serviceKey = serviceKey,
+        note       = (note and note ~= "") and note or nil,
+    }
+end
+
+-- Parse a service removal.
+-- Wire format: [MCR]SVR:<serviceKey>
+local function ParseServiceRemove(msg, sender)
+    local body = string.sub(msg, #PREFIX_SVR + 1)
+    if not body or body == "" then return nil end
+    -- Accept only the key part; strip any trailing whitespace
+    local key = body:match("^([^,%s]+)")
+    if not key then return nil end
+    return { seller = sender, serviceKey = key }
+end
+    local body = string.sub(msg, #PREFIX_QR + 1)
+    if not body or body == "" then return nil end
+    -- Ignore legacy numeric-only removals (pre-fix clients sent itemID=0)
+    if tonumber(body) then return nil end
+    return { itemName = body, buyer = sender }
+end
+
 ---------------------------------------------------------------------------
 -- Event handler
 ---------------------------------------------------------------------------
@@ -150,6 +192,28 @@ function MC.Listener:OnChatMsgChannel(msg, sender, _, _, _, _, _, _, channelName
         end)
         if not ok and MC.debugMode then
             print("MCR ERROR (Q):", err, "| msg:", msg, "| sender:", sender)
+        end
+    elseif string.sub(msg, 1, #PREFIX_SVR) == PREFIX_SVR then
+        -- service remove — check SVR before SV (SVR is the longer prefix)
+        local ok, err = pcall(function()
+            local data = ParseServiceRemove(msg, sender)
+            if data then
+                MC.Services:CacheRemove(data.seller, data.serviceKey)
+            end
+        end)
+        if not ok and MC.debugMode then
+            print("MCR ERROR (SVR):", err, "| msg:", msg, "| sender:", sender)
+        end
+    elseif string.sub(msg, 1, #PREFIX_SV) == PREFIX_SV then
+        -- service offer
+        local ok, err = pcall(function()
+            local entry = ParseService(msg, sender)
+            if entry then
+                MC.Services:CacheAdd(entry)
+            end
+        end)
+        if not ok and MC.debugMode then
+            print("MCR ERROR (SV):", err, "| msg:", msg, "| sender:", sender)
         end
     end
 end
